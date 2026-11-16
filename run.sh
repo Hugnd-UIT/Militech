@@ -10,12 +10,12 @@ IMAGE="militech:latest"
 
 TARGET=""
 BRANCH=""
-KEEP=0
+FOLLOW=0
 REBUILD=0
 FORWARD_ARGS=()
 
 usage() {
-    echo "Usage: bash run.sh <git_url_or_local_path> [--branch <tag>] [--keep] [--rebuild] [--provider openai|anthropic]"
+    echo "Usage: bash run.sh <git_url_or_local_path> [--branch <tag>] [--follow|-f] [--rebuild] [--provider openai|anthropic]"
     exit "${1:-1}"
 }
 
@@ -30,8 +30,8 @@ while [[ $# -gt 0 ]]; do
             FORWARD_ARGS+=("--branch" "$BRANCH")
             shift 2
             ;;
-        --keep)
-            KEEP=1
+        --follow|-f)
+            FOLLOW=1
             shift
             ;;
         --rebuild)
@@ -93,7 +93,7 @@ OUT_DIR="$SCRIPT_DIR/outputs/$REPO_NAME"
 mkdir -p "$OUT_DIR"
 
 DOCKER_ARGS=(
-    run -i
+    run -d
     --name "$CONTAINER_NAME"
     --cap-add=NET_ADMIN
     --cap-add=SYS_PTRACE
@@ -101,14 +101,6 @@ DOCKER_ARGS=(
     -e "MILITECH_CONTAINER_NAME=$CONTAINER_NAME"
     -v "$(to_docker_path "$OUT_DIR"):/outputs:rw"
 )
-
-if [[ -t 0 && -t 1 ]]; then
-    DOCKER_ARGS+=(-t)
-fi
-
-if [[ "$KEEP" -eq 0 ]]; then
-    DOCKER_ARGS+=(--rm)
-fi
 
 if [[ -f "$SCRIPT_DIR/config/config.yml" ]]; then
     DOCKER_ARGS+=(-v "$(to_docker_path "$SCRIPT_DIR/config/config.yml"):/app/config/config.yml:ro")
@@ -121,14 +113,25 @@ if [[ -d "$TARGET" ]]; then
     CONTAINER_TARGET="/host_repo"
 fi
 
-# Clean up exited container with same name if left from a previous --keep/crash run
-if "$DOCKER_BIN" ps -a --format '{{.Names}} {{.State}}' | grep -q "^${CONTAINER_NAME} exited$"; then
+# Prevent colliding with a running container; clean up exited container of the same name before new launch
+if "$DOCKER_BIN" ps --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
+    echo "[!] Container $CONTAINER_NAME is already running. View logs: docker logs -f $CONTAINER_NAME"
+    exit 1
+fi
+if "$DOCKER_BIN" ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
     "$DOCKER_BIN" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 fi
 
-echo "[*] Launching $CONTAINER_NAME (outputs -> outputs/$REPO_NAME)"
-exec "$DOCKER_BIN" "${DOCKER_ARGS[@]}" "$IMAGE" \
+CID="$("$DOCKER_BIN" "${DOCKER_ARGS[@]}" "$IMAGE" \
     "$CONTAINER_TARGET" \
     --outputs /outputs \
     --in-container \
-    "${FORWARD_ARGS[@]}"
+    "${FORWARD_ARGS[@]}")"
+
+echo "[+] Started $CONTAINER_NAME (${CID:0:12}) in background (outputs -> outputs/$REPO_NAME)"
+echo "    Logs: docker logs -f $CONTAINER_NAME"
+echo "    Stop: docker stop $CONTAINER_NAME"
+
+if [[ "$FOLLOW" -eq 1 ]]; then
+    exec "$DOCKER_BIN" logs -f "$CONTAINER_NAME"
+fi

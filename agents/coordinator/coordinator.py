@@ -9,7 +9,7 @@ from src.state import State, _num_suffix
 
 class CoordinatorAgent(BaseAgent):
 
-    extra_actions = ("check_status", "call_agent", "write_report")
+    extra_actions = ("check_status", "call_agent", "report")
 
     def __init__(
         self,
@@ -41,12 +41,10 @@ class CoordinatorAgent(BaseAgent):
         self.cards = self.resolver.resolve_all()
 
     def execute(self, command, timeout=None):
-        """Restrict Coordinator bash strictly to read-only inspection inside /outputs."""
+        """Allow Coordinator read-only bash inspection across /outputs and /data."""
         cmd = str(command or "").strip()
-        if "/data" in cmd or "/host_repo" in cmd:
-            return 1, "Coordinator bash is restricted to /outputs inspection only (/data is forbidden)."
         if any(tok in cmd for tok in (" >", ">>", "rm ", "mv ", "cp ", "sed -i", "tee ")):
-            return 1, "Coordinator bash is read-only inside /outputs; do not modify artifacts directly."
+            return 1, "Coordinator bash is read-only; do not modify files or artifacts directly."
         return super().execute(command, timeout=timeout)
 
     @staticmethod
@@ -234,7 +232,7 @@ class CoordinatorAgent(BaseAgent):
                     sub_tasks.append({
                         "task_name": "Check Report",
                         "status": "PENDING",
-                        "details": f"{fid} PoV is CONFIRMED but GitHub Advisory report is missing. Call write_report for {fid}.",
+                        "details": f"{fid} PoV is CONFIRMED but GitHub Advisory report is missing. Call report for {fid}.",
                     })
             elif p_status == "UNCONFIRMED":
                 sub_tasks.append({
@@ -589,7 +587,7 @@ class CoordinatorAgent(BaseAgent):
                 return 0, self._run_pov_subloop(args)
             return 1, f"Unknown agent `{args.get('agent')}`. Valid keys: {list(self.cards.keys())}"
 
-        if action == "write_report":
+        if action == "report":
             flow_id = str(args.get("flow_id") or "")
             content = str(args.get("content") or "")
             num = _num_suffix(flow_id)
