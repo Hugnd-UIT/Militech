@@ -1,0 +1,12 @@
+.git/
+.venv/
+.agents/
+__pycache__/
+*.py[cod]
+benchmark/
+docs/
+outputs/
+repos/
+graphify-out/
+scratch/
+tmp.txt

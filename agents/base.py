@@ -224,15 +224,14 @@ class BaseAgent:
         m = re.search(r"(?:THOUGHT|Thinking|Reasoning)[\s:\-]+(.*?)(?=(```|\n\s*(?:ACTION|Action)|\Z))", text, re.DOTALL | re.IGNORECASE)
         if m and m.group(1).strip():
             thought = m.group(1).strip()
-        else:
-            thought = text.split("```")[0].strip() if "```" in text else ""
-            if not thought and "```" in text:
-                parts = text.split("```")
-                if len(parts) >= 3 and parts[-1].strip():
-                    thought = parts[-1].strip()
+        elif "```" in text:
+            thought = text.split("```", 1)[0].strip()
 
+        thought = re.sub(r"</?[a-zA-Z0-9_-]+\b[^>]*>", "", thought).strip()
         thought = re.sub(r"^#+\s*(?:Thinking|Thought|Reasoning)[\s:\-]*", "", thought, flags=re.IGNORECASE).strip()
         thought = re.sub(r"\n\s*(?:ACTION|Action)[\s:\-]+.*$", "", thought, flags=re.IGNORECASE).strip()
+        if not re.search(r"[a-zA-Z0-9]", thought):
+            thought = ""
 
         # Extract action
         for act in getattr(self, "extra_actions", ()) or ():

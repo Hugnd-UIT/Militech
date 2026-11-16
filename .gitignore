@@ -2,7 +2,9 @@ graphify-out/
 __pycache__/
 scratch/
 outputs/
+repos/
 
 benchmark/vulngym/repos/
 .agents/
+.venv/
 tmp.txt

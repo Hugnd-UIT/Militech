@@ -57,6 +57,18 @@ def config(config_path=None):
     return {}
 
 
+def _resolve_url(url):
+    """Rewrite localhost proxy URLs to host.docker.internal when running inside a container."""
+    if not url or not str(url).strip():
+        return None
+    s = str(url).strip()
+    if Path("/.dockerenv").exists():
+        for local_host in ("127.0.0.1", "localhost", "0.0.0.0"):
+            if f"://{local_host}" in s:
+                s = s.replace(f"://{local_host}", "://host.docker.internal")
+    return s
+
+
 # OpenAI provider
 class OpenAI:
     def __init__(self, key=None, url=None, model=None, agent_name=None, config_path=None):
@@ -66,9 +78,7 @@ class OpenAI:
         self.agent_name = agent_name or ""
 
         # Setup url
-        self.url = url or provider_cfg.get("url") or None
-        if self.url and not str(self.url).strip():
-            self.url = None
+        self.url = _resolve_url(url or provider_cfg.get("url") or None)
 
         # Setup key
         self.key = key or provider_cfg.get("key") or ""
@@ -82,13 +92,18 @@ class OpenAI:
         else:
             self.model = ""
 
-        # Initialize client
-        self.client = _OpenAIClient(api_key=self.key or "none", base_url=self.url, timeout=180.0)
+        # Initialize client (max_retries=0 so retry() owns backoff & logging cleanly)
+        self.client = _OpenAIClient(
+            api_key=self.key or "none",
+            base_url=self.url,
+            timeout=90.0,
+            max_retries=0,
+        )
 
 
     def chat(self, messages, **kwargs):
         call_kwargs = dict(kwargs)
-        if self.url and any(h in self.url for h in ("google", "localhost", "127.0.0.1", "0.0.0.0")):
+        if self.url and any(h in self.url for h in ("google", "localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal")):
             try:
                 from utils import apply
                 call_kwargs = apply(call_kwargs)
@@ -164,9 +179,7 @@ class Anthropic:
         self.agent_name = agent_name or ""
 
         # Setup url
-        self.url = url or provider_cfg.get("url") or None
-        if self.url and not str(self.url).strip():
-            self.url = None
+        self.url = _resolve_url(url or provider_cfg.get("url") or None)
 
         # Setup key
         self.key = key or provider_cfg.get("key") or ""
@@ -180,8 +193,13 @@ class Anthropic:
         else:
             self.model = ""
 
-        # Initialize client
-        self.client = _AnthropicClient(api_key=self.key or "none", base_url=self.url)
+        # Initialize client (max_retries=0 so retry() owns backoff & logging cleanly)
+        self.client = _AnthropicClient(
+            api_key=self.key or "none",
+            base_url=self.url,
+            timeout=90.0,
+            max_retries=0,
+        )
 
     def chat(self, messages, **kwargs):
         # Format messages

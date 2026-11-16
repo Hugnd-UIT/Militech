@@ -337,17 +337,6 @@ class CoordinatorAgent(BaseAgent):
                     "reason": "VulnAnalyzer flagged broken indirect/pointer links; dispatch repo-retriever with flow_id to stitch.",
                 }, ensure_ascii=False)
 
-            # Skip debator when Analyzer already proved BENIGN with code evidence
-            if verdict == "BENIGN":
-                saved = self.state.save_hypothesis(flow_id, last_hyp, approved=False)
-                return json.dumps({
-                    "flow_id": flow_id,
-                    "decision": "REJECT",
-                    "round": round_idx,
-                    "saved_to": self._container_path(saved),
-                    "reason": last_hyp.get("description", "Analyzer concluded BENIGN with evidence."),
-                }, ensure_ascii=False)
-
             last_debate = d_agent.run(
                 self.repo_path,
                 flow_obj,
@@ -365,14 +354,15 @@ class CoordinatorAgent(BaseAgent):
                 }, ensure_ascii=False)
 
             if str(last_debate.get("decision", "")).upper() == "ACCEPT":
+                is_vuln = (verdict != "BENIGN")
                 last_hyp["debate_consensus"] = last_debate.get("reason", "")
-                saved = self.state.save_hypothesis(flow_id, last_hyp, approved=True)
+                saved = self.state.save_hypothesis(flow_id, last_hyp, approved=is_vuln)
                 return json.dumps({
                     "flow_id": flow_id,
-                    "decision": "ACCEPT",
+                    "decision": "ACCEPT" if is_vuln else "REJECT",
                     "round": round_idx,
                     "saved_to": self._container_path(saved),
-                    "summary": last_hyp.get("title", ""),
+                    "summary": last_hyp.get("title", last_hyp.get("description", "")),
                 }, ensure_ascii=False)
 
             feedback = last_debate
@@ -388,6 +378,7 @@ class CoordinatorAgent(BaseAgent):
             "status": "TIE_BREAK_REQUIRED",
             "rounds_exhausted": self.max_debate_rounds,
             "analyzer_argument": {
+                "verdict": (last_hyp or {}).get("verdict"),
                 "title": (last_hyp or {}).get("title"),
                 "cwe": (last_hyp or {}).get("cwe"),
                 "defense": (last_hyp or {}).get("defense") or (last_hyp or {}).get("description"),

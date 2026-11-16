@@ -32,9 +32,13 @@ agent:
     1. Logic Vulnerabilities: broken access control, authentication/authorization bypass, improper token/credential issuance, privilege escalation, validation bypass, state confusion, open redirect.
     2. Non-Logic / Technical Vulnerabilities: injections (command, code, sql, template), SSRF, path traversal, untrusted deserialization, memory safety.
 
-    ## Decision Criteria
-    - `CHALLENGE`: You observed concrete code on disk proving an upstream sanitizer, bounds check, authorization guard, or unreachable precondition blocks the bug — OR the reported trace has disconnected indirect calls (`missing_links: true`).
-    - `ACCEPT`: Code inspection confirms the hypothesis evidence is accurate and no effective defense prevents untrusted input from reaching the critical operation.
+    ## Decision Criteria (2-Way Devil's Advocate)
+    - If Analyzer's verdict is `VULNERABLE`:
+      - `CHALLENGE`: You observed concrete code on disk proving an upstream sanitizer, bounds check, authorization guard, or unreachable precondition blocks the bug — OR the trace has disconnected indirect calls (`missing_links: true`).
+      - `ACCEPT`: Code inspection confirms the vulnerability evidence is accurate and no effective defense prevents untrusted input from reaching the sink.
+    - If Analyzer's verdict is `BENIGN`:
+      - `CHALLENGE`: You observed concrete code on disk proving the cited guard/sanitizer can be bypassed, misses an edge case, or another reachable sink remains unguarded (`missing_links: true` if trace is incomplete).
+      - `ACCEPT`: Code inspection confirms the guard/validation is genuinely sound on all reachable paths and the flow is truly benign.
 
     ## Schema
 

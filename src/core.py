@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -7,20 +9,84 @@ _root = Path(__file__).resolve().parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from docker.sandbox import init as sandbox_init
+from docker.sandbox import LocalSandbox
 from src.state import State
 from utils.logger import setup_logger
 
 
-class Orchestrator:
+def _is_git_url(target: str) -> bool:
+    s = str(target or "").strip()
+    if s.startswith(("http://", "https://", "ssh://", "git://", "git@")):
+        return True
+    return s.endswith(".git") and not Path(s).exists()
+
+
+def _repo_name(target: str) -> str:
+    s = str(target or "").strip().rstrip("/\\")
+    if _is_git_url(s):
+        name = s.split("/")[-1].split(":")[-1]
+        return name[:-4] if name.endswith(".git") else (name or "target")
+    return Path(s).resolve().name or "target"
+
+
+def _clear_dir(path: Path) -> None:
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=True)
+        return
+    for entry in path.iterdir():
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+
+
+def _prepare_repo(repo_arg: str, branch: str | None = None, in_container: bool = False) -> Path:
+    raw = str(repo_arg).strip()
+    if _is_git_url(raw):
+        if not in_container:
+            raise RuntimeError("Git URL targets must run inside Docker (use run.sh or --in-container).")
+        dest = Path("/data")
+        _clear_dir(dest)
+        cmd = ["git", "clone", "--depth", "1"]
+        if branch:
+            cmd.extend(["--branch", branch])
+        cmd.extend([raw, str(dest)])
+        subprocess.run(cmd, check=True)
+        return dest
+
+    src = Path(raw).resolve()
+    if in_container and src == Path("/host_repo") and src != Path("/data"):
+        dest = Path("/data")
+        _clear_dir(dest)
+        shutil.copytree(src, dest, dirs_exist_ok=True, symlinks=True)
+        return dest
+    return src
+
+
+class Militech:
     """Entry-point orchestrator initializing sandbox, graphify, and the Master Coordinator."""
 
-    def __init__(self, repo_path, outputs_path="outputs", config_path=None, provider_cls=None, skip_prep=False):
-        self.repo = Path(repo_path).resolve()
-        self.outputs_path = Path(outputs_path).resolve()
+    def __init__(
+        self,
+        repo_path,
+        outputs_path="outputs",
+        config_path=None,
+        provider_cls=None,
+        branch=None,
+        in_container=None,
+    ):
+        self.in_container = Path("/.dockerenv").exists() if in_container is None else bool(in_container)
+        self.repo_label = _repo_name(repo_path)
+        self.repo = _prepare_repo(repo_path, branch=branch, in_container=self.in_container)
+
+        base_outputs = Path(outputs_path).resolve()
+        if self.in_container or base_outputs.name == self.repo_label:
+            self.outputs_path = base_outputs
+        else:
+            self.outputs_path = base_outputs / self.repo_label
+
         self.config_path = config_path
         self.state = State(self.outputs_path)
-        self.skip_prep = skip_prep
         self.log = setup_logger(log_file=self.state.cache_dir / "agents.log")
 
         if provider_cls is None:
@@ -34,8 +100,12 @@ class Orchestrator:
         self.container = None
 
     def init_sandbox(self):
-        """Initialize Docker sandbox mounting target repository and outputs directory."""
-        self.container = sandbox_init(repo_path=str(self.repo), outputs_path=str(self.outputs_path))
+        """Initialize execution sandbox (local subprocess in container, or Docker from host)."""
+        if self.in_container:
+            self.container = LocalSandbox()
+        else:
+            from docker.sandbox import init as sandbox_init
+            self.container = sandbox_init(repo_path=str(self.repo), outputs_path=str(self.outputs_path))
         self.log.info(f"{self.container.name} [{self.container.status}]")
         return self.container
 
@@ -60,7 +130,7 @@ class Orchestrator:
         try:
             import importlib
             fuzz_mod = importlib.import_module("src.fuzz-harness")
-            self.state.harness = fuzz_mod.check(self.repo, self.outputs_path)
+            self.state.harness = fuzz_mod.check(self.repo, self.state.cache_dir)
         except Exception as e:
             self.log.warning(f"Fuzz harness check: {e}")
 
@@ -68,16 +138,7 @@ class Orchestrator:
         """Initialize environment and hand control over to CoordinatorAgent."""
         start = time.time()
         self.init_sandbox()
-
-        if not (self.skip_prep and self.state.call_graph_path().exists() and self.state.call_flows_path().exists()):
-            self.phase_graph()
-        elif not self.state.harness:
-            try:
-                import importlib
-                fuzz_mod = importlib.import_module("src.fuzz-harness")
-                self.state.harness = fuzz_mod.check(self.repo, self.outputs_path)
-            except Exception:
-                pass
+        self.phase_graph()
 
         from agents import CoordinatorAgent
         coordinator = CoordinatorAgent(
@@ -109,12 +170,13 @@ class Orchestrator:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Vulnalysis")
-    parser.add_argument("repo", help="Path to target repository")
+    parser = argparse.ArgumentParser(description="Militech")
+    parser.add_argument("repo", help="Path or Git URL of target repository")
+    parser.add_argument("--branch", default=None, help="Git branch/tag when cloning URL target")
     parser.add_argument("--outputs", default="outputs", help="Path to outputs directory")
     parser.add_argument("--config", default=None, help="Path to config.yml")
     parser.add_argument("--provider", default="openai", choices=["openai", "anthropic"], help="LLM provider")
-    parser.add_argument("--skip-preprogress", "--skip-prep", dest="skip_preprogress", action="store_true", help="Skip graphify extraction if outputs/graph/ already exists")
+    parser.add_argument("--in-container", dest="in_container", action="store_true", default=None, help="Run directly inside container without docker-py")
     args = parser.parse_args()
 
     if args.provider == "anthropic":
@@ -124,14 +186,15 @@ def main():
         from models.provider import OpenAI
         provider_cls = OpenAI
 
-    orch = Orchestrator(
+    app = Militech(
         repo_path=args.repo,
         outputs_path=args.outputs,
         config_path=args.config,
         provider_cls=provider_cls,
-        skip_prep=args.skip_preprogress,
+        branch=args.branch,
+        in_container=args.in_container,
     )
-    res = orch.run()
+    res = app.run()
 
     confirmed = len(res.get("reports", []))
     color = "\033[1;32m" if confirmed > 0 else "\033[1;33m"
@@ -142,4 +205,4 @@ if __name__ == "__main__":
     main()
 
 
-__all__ = ["Orchestrator", "main"]
+__all__ = ["Militech", "main"]

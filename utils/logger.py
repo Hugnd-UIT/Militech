@@ -88,6 +88,10 @@ def setup_logger(log_file=None):
 
     for h in list(root.handlers):
         root.removeHandler(h)
+        try:
+            h.close()
+        except Exception:
+            pass
 
     formatter = logging.Formatter()
     formatter.format = format_record

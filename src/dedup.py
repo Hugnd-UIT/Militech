@@ -284,8 +284,37 @@ DANGEROUS_STEMS = (
 )
 
 
+def _clean_prod_paths(paths, is_non_prod_fn, limit=3):
+    """Trim leading non-production steps from path chains, dedup, and keep shortest."""
+    seen = set()
+    cleaned = []
+    for p in paths or []:
+        if not isinstance(p, list) or not p:
+            continue
+        idx = 0
+        while idx < len(p):
+            step = str(p[idx])
+            if ":" in step and is_non_prod_fn(step.split(":", 1)[0]):
+                idx += 1
+            else:
+                break
+        trimmed = p[idx:]
+        if not trimmed:
+            continue
+        if any(":" in str(s) and is_non_prod_fn(str(s).split(":", 1)[0]) for s in trimmed):
+            continue
+        key = tuple(str(s) for s in trimmed)
+        if key not in seen:
+            seen.add(key)
+            cleaned.append(trimmed)
+    cleaned.sort(key=len)
+    return cleaned[:limit]
+
+
 def filter(flows):
     import json
+    from utils.skip import is_non_prod
+
     cleaned = []
     seen = {}
     for f in flows:
@@ -301,7 +330,18 @@ def filter(flows):
         dst = f.get("dst", {}) or {}
         func = str(src.get("func") or src.get("id") or "").strip()
         fn_lower = func.lower()
-        dst_file = str(dst.get("file") or "").lower()
+        raw_dst_file = str(dst.get("file") or "")
+        dst_file = raw_dst_file.lower()
+
+        if raw_dst_file and is_non_prod(raw_dst_file):
+            continue
+
+        orig_paths = f.get("paths") or []
+        prod_paths = _clean_prod_paths(orig_paths, is_non_prod)
+        if orig_paths and not prod_paths:
+            continue
+        if isinstance(orig_paths, list):
+            f = {**f, "paths": prod_paths}
 
         is_dangerous = any(s in fn_lower for s in DANGEROUS_STEMS)
         is_internal = any(dst_file.endswith(ext) for ext in (".c", ".cpp", ".cc", ".h")) and (
@@ -317,10 +357,11 @@ def filter(flows):
         key = (dst.get("file"), dst.get("line"), func)
         if key in seen:
             existing = seen[key]
-            cur_paths = existing.setdefault("paths", [])
-            for p in f.get("paths", []):
-                if p not in cur_paths:
-                    cur_paths.append(p)
+            merged = _clean_prod_paths(
+                list(existing.get("paths") or []) + list(prod_paths),
+                is_non_prod,
+            )
+            existing["paths"] = merged
         else:
             seen[key] = f
             cleaned.append(f)

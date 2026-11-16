@@ -1,11 +1,15 @@
 FROM kalilinux/kali-rolling
 
-LABEL maintainer="Vulnalysis"
+LABEL maintainer="Militech"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
 
-RUN apt-get update && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
+RUN sed -i 's|http://http.kali.org/kali|http://kali.download/kali|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true && \
+    apt-get update -o Acquire::http::No-Cache=True -o Acquire::Retries=5 && \
+    apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
     ca-certificates \
     curl \
     wget \
@@ -35,9 +39,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends -o Acquire::Ret
     sudo \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED
+RUN rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED && git config --global --add safe.directory '*'
 
-RUN mkdir -p /data && ln -s /data /workspace
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm -f /tmp/requirements.txt
+
+COPY . /app
+RUN mkdir -p /data /outputs && ln -sf /data /workspace
 WORKDIR /data
 
-CMD ["/bin/bash"]
+ENTRYPOINT ["python3", "/app/src/core.py"]
