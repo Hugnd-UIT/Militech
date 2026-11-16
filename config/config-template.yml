@@ -1,0 +1,40 @@
+# Copy this file to config/config.yml and set your provider URL and API key.
+provider:
+  url: <YOUR_PROVIDER>
+  key: <YOUR_KEY>
+
+agents:
+  coordinator:
+    model: <YOUR_MODEL>
+    input-rate: <YOUR_INPUT_RATE>
+    output-rate: <YOUR_OUTPUT_RATE>
+
+  vuln-analyzer:
+    model: <YOUR_MODEL>
+    input-rate: <YOUR_INPUT_RATE>
+    output-rate: <YOUR_OUTPUT_RATE>
+
+  vuln-debator:
+    model: <YOUR_MODEL>
+    input-rate: <YOUR_INPUT_RATE>
+    output-rate: <YOUR_OUTPUT_RATE>
+
+  pov-generator:
+    model: <YOUR_MODEL>
+    input-rate: <YOUR_INPUT_RATE>
+    output-rate: <YOUR_OUTPUT_RATE>
+
+  pov-verifier:
+    model: <YOUR_MODEL>
+    input-rate: <YOUR_INPUT_RATE>
+    output-rate: <YOUR_OUTPUT_RATE>
+
+  repo-builder:
+    model: <YOUR_MODEL>
+    input-rate: <YOUR_INPUT_RATE>
+    output-rate: <YOUR_OUTPUT_RATE>
+
+  repo-retriever:
+    model: <YOUR_MODEL>
+    input-rate: <YOUR_INPUT_RATE>
+    output-rate: <YOUR_OUTPUT_RATE>

@@ -36,6 +36,7 @@ class State:
         self.hypothesis_dir = self.outputs_path / "hypothesis"
         self.approved_dir = self.hypothesis_dir / "approved"
         self.rejected_dir = self.hypothesis_dir / "rejected"
+        self.disputed_dir = self.hypothesis_dir / "disputed"
         self.pov_dir = self.outputs_path / "pov"
         self.report_dir = self.outputs_path / "report"
 
@@ -51,6 +52,7 @@ class State:
             self.graph_dir,
             self.approved_dir,
             self.rejected_dir,
+            self.disputed_dir,
             self.pov_dir,
             self.report_dir,
         ):
@@ -218,38 +220,63 @@ class State:
         return None, None
 
     # --- Phase 3: Hypothesis & Debate ---
-    def save_hypothesis(self, flow_id: str, data: dict, approved: bool) -> str:
+    def save_hypothesis(self, flow_id: str, data: dict, approved: bool | None = True, status: str | None = None) -> str:
         num = _num_suffix(flow_id)
         filename = f"hypothesis_{num}.json"
-        dest_dir = self.approved_dir if approved else self.rejected_dir
-        other_dir = self.rejected_dir if approved else self.approved_dir
+        bucket = status if status in ("approved", "rejected", "disputed") else ("approved" if approved else "rejected")
+        dirs = {
+            "approved": self.approved_dir,
+            "rejected": self.rejected_dir,
+            "disputed": self.disputed_dir,
+        }
+        dest_dir = dirs[bucket]
+        dest_dir.mkdir(parents=True, exist_ok=True)
 
-        other_file = other_dir / filename
-        if other_file.exists():
-            other_file.unlink()
+        for key, folder in dirs.items():
+            if key != bucket:
+                stale = folder / filename
+                if stale.exists():
+                    stale.unlink()
 
         dest_file = dest_dir / filename
         payload = dict(data)
         payload["flow_id"] = flow_id
-        payload["decision"] = "ACCEPT" if approved else "REJECT"
+        payload["decision"] = {"approved": "ACCEPT", "rejected": "REJECT", "disputed": "DISPUTED"}[bucket]
         dest_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         return str(dest_file)
 
+    @staticmethod
+    def _scan_hypotheses(folder: Path) -> dict[str, dict]:
+        res = {}
+        if not folder.exists():
+            return res
+        for p in sorted(folder.glob("hypothesis_*.json")):
+            try:
+                res[_num_suffix(p.stem)] = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return res
+
     def list_hypotheses(self) -> tuple[dict[str, dict], dict[str, dict]]:
         """Return (approved_map, rejected_map) keyed by numeric suffix '001'."""
-        def _scan(folder: Path) -> dict[str, dict]:
-            res = {}
-            if not folder.exists():
-                return res
-            for p in sorted(folder.glob("hypothesis_*.json")):
-                try:
-                    data = json.loads(p.read_text(encoding="utf-8"))
-                    res[_num_suffix(p.stem)] = data
-                except Exception:
-                    pass
-            return res
+        return self._scan_hypotheses(self.approved_dir), self._scan_hypotheses(self.rejected_dir)
 
-        return _scan(self.approved_dir), _scan(self.rejected_dir)
+    def list_disputed_hypotheses(self) -> dict[str, dict]:
+        """Return disputed hypotheses awaiting empirical PoV arbitration."""
+        return self._scan_hypotheses(self.disputed_dir)
+
+    def promote_disputed(self, flow_id: str, approved: bool) -> str | None:
+        """Move a disputed hypothesis into approved/ or rejected/ after PoV verification."""
+        num = _num_suffix(flow_id)
+        src = self.disputed_dir / f"hypothesis_{num}.json"
+        if not src.exists():
+            return None
+        try:
+            data = json.loads(src.read_text(encoding="utf-8"))
+        except Exception:
+            data = {"flow_id": flow_id}
+        data["pov_verified"] = "CONFIRMED" if approved else "UNCONFIRMED"
+        return self.save_hypothesis(flow_id, data, status="approved" if approved else "rejected")
 
     # --- Phase 4: PoV & Report ---
     def pov_paths(self, flow_id: str) -> tuple[Path, Path]:

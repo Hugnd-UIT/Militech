@@ -8,3 +8,4 @@ benchmark/vulngym/repos/
 .agents/
 .venv/
 tmp.txt
+config/config.yml

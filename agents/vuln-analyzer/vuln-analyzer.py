@@ -56,8 +56,13 @@ class VulnAnalyzerAgent(BaseAgent):
                 if content:
                     extracted = self.extract_json(content)
             if extracted and isinstance(extracted, dict):
+                v = str(extracted.get("verdict", "")).strip().upper()
+                if v in ("VULN", "VULNERABLE"):
+                    extracted["verdict"] = "VULNERABLE"
+                elif v == "BENIGN":
+                    extracted["verdict"] = "BENIGN"
                 ev = extracted.get("evidence")
-                if isinstance(ev, list) and len(ev) > 0:
+                if extracted.get("verdict") in ("VULNERABLE", "BENIGN") and isinstance(ev, list) and len(ev) > 0:
                     self.log_action("finish")
                     self.log(thought=thought, action="finish", observation="Analysis completed")
                     return True, extracted

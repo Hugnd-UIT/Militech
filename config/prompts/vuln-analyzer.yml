@@ -97,7 +97,6 @@ agent:
           "snippet": "<string: exact code line observed on disk>"
         }
       ],
-      "missing_links": "<boolean: true if trace has broken indirect/pointer call requiring retriever stitching>",
       "remediation": "<string: fix recommendation>"
     }
     ```

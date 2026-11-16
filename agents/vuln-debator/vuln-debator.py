@@ -49,14 +49,11 @@ class VulnDebatorAgent(BaseAgent):
             extracted = self.extract_json(reply)
             if extracted and isinstance(extracted, dict):
                 decision = str(extracted.get("decision", "")).strip().upper()
-                if decision in ("ACCEPT", "CONCEDE"):
-                    extracted["decision"] = "ACCEPT"
-                elif decision in ("CHALLENGE", "REJECT", "REVISE"):
-                    extracted["decision"] = "CHALLENGE"
                 ev = extracted.get("evidence")
-                if extracted.get("decision") in ("ACCEPT", "CHALLENGE") and isinstance(ev, list) and len(ev) > 0:
+                if decision in ("ACCEPT", "REJECT", "REVISE") and isinstance(ev, list) and len(ev) > 0:
+                    extracted["decision"] = decision
                     self.log_action("finish")
-                    self.log(thought=thought, action="finish", observation=f"Debate decision: {extracted['decision']}")
+                    self.log(thought=thought, action="finish", observation=f"Debate decision: {decision}")
                     return True, extracted
             return False, None
 

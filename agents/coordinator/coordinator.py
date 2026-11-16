@@ -8,9 +8,8 @@ from src.state import State, _num_suffix
 
 
 class CoordinatorAgent(BaseAgent):
-    """Master A2A coordinator orchestrating build, retrieval, debate, PoV, and reporting."""
 
-    extra_actions = ("check_status", "call_agent", "resolve_debate", "write_report")
+    extra_actions = ("check_status", "call_agent", "write_report")
 
     def __init__(
         self,
@@ -35,12 +34,31 @@ class CoordinatorAgent(BaseAgent):
         self.max_debate_rounds = int(max_debate_rounds)
         self.max_pov_rounds = int(max_pov_rounds)
         self.start_time = time.time()
-        self._pending_tie_breaks: dict[str, dict] = {}
 
         # Load A2A worker cards
         from agents import card_resolver
         self.resolver = card_resolver.CardResolver()
         self.cards = self.resolver.resolve_all()
+
+    def execute(self, command, timeout=None):
+        """Restrict Coordinator bash strictly to read-only inspection inside /outputs."""
+        cmd = str(command or "").strip()
+        if "/data" in cmd or "/host_repo" in cmd:
+            return 1, "Coordinator bash is restricted to /outputs inspection only (/data is forbidden)."
+        if any(tok in cmd for tok in (" >", ">>", "rm ", "mv ", "cp ", "sed -i", "tee ")):
+            return 1, "Coordinator bash is read-only inside /outputs; do not modify artifacts directly."
+        return super().execute(command, timeout=timeout)
+
+    @staticmethod
+    def _debate_trace(hyp: dict) -> str:
+        hist = hyp.get("debate_history") or []
+        if not hist:
+            return ""
+        parts = [
+            f"R{h.get('round')}:{h.get('analyzer_verdict')}/{h.get('debator_decision')}"
+            for h in hist
+        ]
+        return "[" + " -> ".join(parts) + "]"
 
     @staticmethod
     def _norm(name: str) -> str:
@@ -152,27 +170,32 @@ class CoordinatorAgent(BaseAgent):
 
         # 5. Hypothesis & Debate (Phase 3 per retrieved flow)
         approved, rejected = self.state.list_hypotheses()
+        disputed = self.state.list_disputed_hypotheses()
         for c_id, flow in self.state.all_flows():
             fid = str(flow.get("id") or "")
             num = _num_suffix(fid)
-            if fid in self._pending_tie_breaks:
-                any_pending = True
-                sub_tasks.append({
-                    "task_name": "Check Hypothesis",
-                    "status": "PENDING",
-                    "details": f"{fid} ({c_id}) debate deadlocked after {self.max_debate_rounds} rounds. Coordinator must call resolve_debate.",
-                })
-            elif num in approved:
+            if num in approved:
+                trace = self._debate_trace(approved[num])
                 sub_tasks.append({
                     "task_name": "Check Hypothesis",
                     "status": "SUCCESS",
-                    "details": f"{fid} ({c_id}) approved (VULNERABLE) -> /outputs/hypothesis/approved/hypothesis_{num}.json.",
+                    "details": f"{fid} ({c_id}) approved (VULNERABLE) -> /outputs/hypothesis/approved/hypothesis_{num}.json {trace}".strip(),
+                })
+            elif num in disputed:
+                hyp = disputed[num]
+                trace = self._debate_trace(hyp)
+                owner = hyp.get("hypothesis_owner", "unknown")
+                sub_tasks.append({
+                    "task_name": "Check Hypothesis",
+                    "status": "SUCCESS",
+                    "details": f"{fid} ({c_id}) DISPUTED (owner={owner}) -> /outputs/hypothesis/disputed/hypothesis_{num}.json {trace}. Run PoV to arbitrate.".strip(),
                 })
             elif num in rejected:
+                trace = self._debate_trace(rejected[num])
                 sub_tasks.append({
                     "task_name": "Check Hypothesis",
                     "status": "SUCCESS",
-                    "details": f"{fid} ({c_id}) closed (REJECT/BENIGN) -> /outputs/hypothesis/rejected/hypothesis_{num}.json.",
+                    "details": f"{fid} ({c_id}) rejected -> /outputs/hypothesis/rejected/hypothesis_{num}.json {trace}".strip(),
                 })
             else:
                 any_pending = True
@@ -182,13 +205,15 @@ class CoordinatorAgent(BaseAgent):
                     "details": f"{fid} ({c_id}) not analyzed yet. Dispatch vuln-analyzer.",
                 })
 
-        # 6. PoV Verification & 7. Report (Phase 4 strictly for APPROVED flows)
+        # 6. PoV Verification & 7. Report (Phase 4 for APPROVED and DISPUTED flows)
         pov_results = self.state.list_pov_results()
         reports = {r["vuln_id"]: r for r in self.state.list_reports()}
-        for num, hyp in sorted(approved.items()):
+        pov_candidates = {**approved, **disputed}
+        for num, hyp in sorted(pov_candidates.items()):
             fid = str(hyp.get("flow_id") or f"flow_{num}")
             res = pov_results.get(num, {})
             p_status = str(res.get("status", "PENDING")).upper()
+            in_disputed = num in disputed and num not in approved
 
             if p_status == "CONFIRMED":
                 sub_tasks.append({
@@ -219,10 +244,12 @@ class CoordinatorAgent(BaseAgent):
                 })
             else:
                 any_pending = True
+                loc = "disputed" if in_disputed else "approved"
+                label = "Disputed" if in_disputed else "Approved"
                 sub_tasks.append({
                     "task_name": "Check PoV",
                     "status": "PENDING",
-                    "details": f"Approved {fid} (/outputs/hypothesis/approved/hypothesis_{num}.json) not verified by PoV yet. Dispatch pov-generator.",
+                    "details": f"{label} {fid} (/outputs/hypothesis/{loc}/hypothesis_{num}.json) not verified by PoV yet. Dispatch pov-generator.",
                 })
 
         if any_failed:
@@ -318,6 +345,9 @@ class CoordinatorAgent(BaseAgent):
         feedback = None
         last_hyp = None
         last_debate = None
+        verdict = "BENIGN"
+        decision = "REVISE"
+        debate_history = []
 
         for round_idx in range(1, self.max_debate_rounds + 1):
             last_hyp = a_agent.run(
@@ -329,13 +359,8 @@ class CoordinatorAgent(BaseAgent):
             if not isinstance(last_hyp, dict):
                 break
 
-            verdict = str(last_hyp.get("verdict", "")).strip().upper()
-            if last_hyp.get("missing_links"):
-                return json.dumps({
-                    "flow_id": flow_id,
-                    "status": "MISSING_LINKS",
-                    "reason": "VulnAnalyzer flagged broken indirect/pointer links; dispatch repo-retriever with flow_id to stitch.",
-                }, ensure_ascii=False)
+            raw_v = str(last_hyp.get("verdict", "")).strip().upper()
+            verdict = "VULNERABLE" if raw_v in ("VULN", "VULNERABLE") else "BENIGN"
 
             last_debate = d_agent.run(
                 self.repo_path,
@@ -346,49 +371,112 @@ class CoordinatorAgent(BaseAgent):
             if not isinstance(last_debate, dict):
                 break
 
-            if last_debate.get("missing_links"):
-                return json.dumps({
-                    "flow_id": flow_id,
-                    "status": "MISSING_LINKS",
-                    "reason": last_debate.get("reason", "Debator identified missing call links; dispatch repo-retriever with flow_id."),
-                }, ensure_ascii=False)
+            decision = str(last_debate.get("decision", "")).strip().upper()
+            debate_history.append({
+                "round": round_idx,
+                "analyzer_verdict": verdict,
+                "debator_decision": decision,
+                "debator_reason": last_debate.get("reason", ""),
+            })
 
-            if str(last_debate.get("decision", "")).upper() == "ACCEPT":
-                is_vuln = (verdict != "BENIGN")
-                last_hyp["debate_consensus"] = last_debate.get("reason", "")
-                saved = self.state.save_hypothesis(flow_id, last_hyp, approved=is_vuln)
+            if decision == "ACCEPT":
+                is_vuln = (verdict == "VULNERABLE")
+                resolution = "CONSENSUS_VULNERABLE" if is_vuln else "CONSENSUS_BENIGN"
+                payload = dict(last_hyp)
+                payload["verdict"] = verdict
+                payload["debate_consensus"] = last_debate.get("reason", "")
+                payload["hypothesis_owner"] = "vuln-analyzer"
+                payload["resolution"] = resolution
+                payload["debate_history"] = debate_history
+                saved = self.state.save_hypothesis(flow_id, payload, status="approved" if is_vuln else "rejected")
                 return json.dumps({
                     "flow_id": flow_id,
-                    "decision": "ACCEPT" if is_vuln else "REJECT",
+                    "status": "APPROVED_FOR_POV" if is_vuln else "REJECTED",
+                    "resolution": resolution,
+                    "hypothesis_owner": "vuln-analyzer",
+                    "analyzer_verdict": verdict,
+                    "debator_decision": "ACCEPT",
                     "round": round_idx,
                     "saved_to": self._container_path(saved),
-                    "summary": last_hyp.get("title", last_hyp.get("description", "")),
+                    "summary": payload.get("title", payload.get("description", "")),
+                    "debate_history": debate_history,
                 }, ensure_ascii=False)
 
             feedback = last_debate
 
-        # Deadlocked after max rounds -> escalate concise arguments to Coordinator as Tie-breaker
-        self._pending_tie_breaks[flow_id] = {
-            "flow_id": flow_id,
-            "hypothesis": last_hyp or {},
-            "debator": last_debate or {},
-        }
+        # Exhausted debate rounds without ACCEPT -> escalating claiming side into disputed/ for PoV arbitration
+        if isinstance(last_hyp, dict) and verdict == "VULNERABLE":
+            payload = dict(last_hyp)
+            payload["verdict"] = "VULNERABLE"
+            payload["hypothesis_owner"] = "vuln-analyzer"
+            payload["resolution"] = "DEADLOCK_ANALYZER_TO_POV"
+            payload["debate_history"] = debate_history
+            saved = self.state.save_hypothesis(flow_id, payload, status="disputed")
+            return json.dumps({
+                "flow_id": flow_id,
+                "status": "DISPUTED",
+                "resolution": "DEADLOCK_ANALYZER_TO_POV",
+                "hypothesis_owner": "vuln-analyzer",
+                "analyzer_verdict": verdict,
+                "debator_decision": decision,
+                "rounds": len(debate_history),
+                "saved_to": self._container_path(saved),
+                "summary": payload.get("title", payload.get("description", "")),
+                "debate_history": debate_history,
+                "next_action": f"Dispatch pov-generator with flow_id={flow_id} to verify empirically.",
+            }, ensure_ascii=False)
+
+        if isinstance(last_debate, dict) and verdict == "BENIGN" and decision == "REJECT":
+            deb_hyp = last_debate.get("hypothesis") if isinstance(last_debate.get("hypothesis"), dict) else {}
+            payload = {
+                "id": deb_hyp.get("id") or flow_id,
+                "verdict": "VULNERABLE",
+                "cwe": deb_hyp.get("cwe") or [],
+                "title": deb_hyp.get("title") or f"Debator challenge on {flow_obj.get('title', flow_id)}",
+                "description": deb_hyp.get("description") or last_debate.get("reason", ""),
+                "source": deb_hyp.get("source") or flow_obj.get("source", {}),
+                "sink": deb_hyp.get("sink") or flow_obj.get("sink", {}),
+                "flow": deb_hyp.get("flow") or {"chain": flow_obj.get("chain", [])},
+                "preconditions": deb_hyp.get("preconditions") or [],
+                "hint": deb_hyp.get("hint") or "; ".join(last_debate.get("suggestions") or []),
+                "expected": deb_hyp.get("expected") or "",
+                "oracle": deb_hyp.get("oracle") or {},
+                "evidence": deb_hyp.get("evidence") or last_debate.get("evidence", []),
+                "remediation": deb_hyp.get("remediation") or "",
+                "hypothesis_owner": "vuln-debator",
+                "resolution": "DEADLOCK_DEBATOR_TO_POV",
+                "debate_history": debate_history,
+            }
+            saved = self.state.save_hypothesis(flow_id, payload, status="disputed")
+            return json.dumps({
+                "flow_id": flow_id,
+                "status": "DISPUTED",
+                "resolution": "DEADLOCK_DEBATOR_TO_POV",
+                "hypothesis_owner": "vuln-debator",
+                "analyzer_verdict": "BENIGN",
+                "debator_decision": "REJECT",
+                "rounds": len(debate_history),
+                "saved_to": self._container_path(saved),
+                "summary": payload.get("title", payload.get("description", "")),
+                "debate_history": debate_history,
+                "next_action": f"Dispatch pov-generator with flow_id={flow_id} to verify empirically.",
+            }, ensure_ascii=False)
+
+        payload = dict(last_hyp or {"id": flow_id, "verdict": "BENIGN"})
+        payload["hypothesis_owner"] = "vuln-analyzer"
+        payload["resolution"] = "DEADLOCK_REVISE_BENIGN"
+        payload["debate_history"] = debate_history
+        saved = self.state.save_hypothesis(flow_id, payload, status="rejected")
         return json.dumps({
             "flow_id": flow_id,
-            "status": "TIE_BREAK_REQUIRED",
-            "rounds_exhausted": self.max_debate_rounds,
-            "analyzer_argument": {
-                "verdict": (last_hyp or {}).get("verdict"),
-                "title": (last_hyp or {}).get("title"),
-                "cwe": (last_hyp or {}).get("cwe"),
-                "defense": (last_hyp or {}).get("defense") or (last_hyp or {}).get("description"),
-                "evidence": (last_hyp or {}).get("evidence", []),
-            },
-            "debator_counter": {
-                "reason": (last_debate or {}).get("reason"),
-                "evidence": (last_debate or {}).get("evidence", []),
-            },
-            "instruction": "Call resolve_debate with decision ACCEPT (test via PoV) or REJECT.",
+            "status": "REJECTED",
+            "resolution": "DEADLOCK_REVISE_BENIGN",
+            "hypothesis_owner": "vuln-analyzer",
+            "analyzer_verdict": verdict,
+            "debator_decision": decision,
+            "rounds": len(debate_history),
+            "saved_to": self._container_path(saved),
+            "debate_history": debate_history,
         }, ensure_ascii=False)
 
     def _run_pov_subloop(self, args: dict) -> str:
@@ -399,9 +487,11 @@ class CoordinatorAgent(BaseAgent):
 
         num = _num_suffix(flow_id)
         approved, _ = self.state.list_hypotheses()
-        hypothesis = approved.get(num)
+        disputed = self.state.list_disputed_hypotheses()
+        from_disputed = num in disputed and num not in approved
+        hypothesis = approved.get(num) or disputed.get(num)
         if not hypothesis:
-            return json.dumps({"error": f"No approved hypothesis found for {flow_id}. Only approved flows can run PoV."})
+            return json.dumps({"error": f"No approved or disputed hypothesis found for {flow_id}."})
 
         script_path, result_path = self.state.pov_paths(flow_id)
         c_script = self._container_path(script_path)
@@ -449,7 +539,8 @@ class CoordinatorAgent(BaseAgent):
                 if decision == "CONFIRMED" and self.state.first_pov_sec is None:
                     self.state.first_pov_sec = time.time() - self.start_time
                 result_path.write_text(json.dumps(final_res, indent=2, ensure_ascii=False), encoding="utf-8")
-                return json.dumps({
+                promoted = self.state.promote_disputed(flow_id, approved=(decision == "CONFIRMED")) if from_disputed else None
+                out = {
                     "flow_id": flow_id,
                     "status": decision,
                     "attempts": attempt,
@@ -457,18 +548,25 @@ class CoordinatorAgent(BaseAgent):
                     "result_path": c_result,
                     "reason": verdict.get("reason", ""),
                     "evidence": verdict.get("evidence", ""),
-                }, ensure_ascii=False)
+                }
+                if promoted:
+                    out["promoted_to"] = self._container_path(promoted)
+                return json.dumps(out, ensure_ascii=False)
 
             feedback = verdict
 
         final_res["status"] = "UNCONFIRMED"
         result_path.write_text(json.dumps(final_res, indent=2, ensure_ascii=False), encoding="utf-8")
-        return json.dumps({
+        promoted = self.state.promote_disputed(flow_id, approved=False) if from_disputed else None
+        out = {
             "flow_id": flow_id,
             "status": "UNCONFIRMED",
             "attempts": self.max_pov_rounds,
             "reason": last_verdict.get("reason", "PoV retries exhausted"),
-        }, ensure_ascii=False)
+        }
+        if promoted:
+            out["promoted_to"] = self._container_path(promoted)
+        return json.dumps(out, ensure_ascii=False)
 
     # --- Action Handlers ---
     def _handle_action(self, action: str, payload: str) -> tuple[int, str]:
@@ -490,21 +588,6 @@ class CoordinatorAgent(BaseAgent):
             if target in ("povgenerator", "generator", "povgeneratoragent", "povverifier", "verifier", "povverifieragent"):
                 return 0, self._run_pov_subloop(args)
             return 1, f"Unknown agent `{args.get('agent')}`. Valid keys: {list(self.cards.keys())}"
-
-        if action == "resolve_debate":
-            flow_id = str(args.get("flow_id") or "")
-            decision = str(args.get("decision", "")).strip().upper()
-            reason = str(args.get("reason", ""))
-            pending = self._pending_tie_breaks.pop(flow_id, None)
-            if not pending:
-                return 1, f"No pending deadlock found for `{flow_id}`."
-            if decision not in ("ACCEPT", "REJECT"):
-                self._pending_tie_breaks[flow_id] = pending
-                return 1, "Decision must be ACCEPT or REJECT."
-            hyp = dict(pending.get("hypothesis") or {})
-            hyp["tie_breaker_reason"] = reason
-            saved = self.state.save_hypothesis(flow_id, hyp, approved=(decision == "ACCEPT"))
-            return 0, json.dumps({"flow_id": flow_id, "decision": decision, "saved_to": self._container_path(saved)})
 
         if action == "write_report":
             flow_id = str(args.get("flow_id") or "")

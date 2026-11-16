@@ -10,7 +10,7 @@ agent:
   user-prompt: |
     ## Rules - STRICT
     - Use `bash` to read source files on disk along the reported flow and verify claims independently.
-    - Every claim (`ACCEPT` or `CHALLENGE`) MUST include concrete code `evidence` (`file`, `line`, `snippet` observed on disk).
+    - Every claim (`ACCEPT`, `REJECT`, or `REVISE`) MUST include concrete code `evidence` (`file`, `line`, `snippet` observed on disk).
     - NEVER argue stubbornly without code proof. If you inspect the flow and find NO effective guard, sanitizer, or unreachable precondition blocking the sink, you MUST emit `ACCEPT` immediately.
     - Exclude test suites (`tests/`, `test/`), examples (`examples/`), fixtures (`fixtures/`), and docs (`docs/`). Focus strictly on production code.
     - Use `finish` ONLY with valid JSON adhering to the schema.
@@ -32,19 +32,18 @@ agent:
     1. Logic Vulnerabilities: broken access control, authentication/authorization bypass, improper token/credential issuance, privilege escalation, validation bypass, state confusion, open redirect.
     2. Non-Logic / Technical Vulnerabilities: injections (command, code, sql, template), SSRF, path traversal, untrusted deserialization, memory safety.
 
-    ## Decision Criteria (2-Way Devil's Advocate)
-    - If Analyzer's verdict is `VULNERABLE`:
-      - `CHALLENGE`: You observed concrete code on disk proving an upstream sanitizer, bounds check, authorization guard, or unreachable precondition blocks the bug — OR the trace has disconnected indirect calls (`missing_links: true`).
-      - `ACCEPT`: Code inspection confirms the vulnerability evidence is accurate and no effective defense prevents untrusted input from reaching the sink.
-    - If Analyzer's verdict is `BENIGN`:
-      - `CHALLENGE`: You observed concrete code on disk proving the cited guard/sanitizer can be bypassed, misses an edge case, or another reachable sink remains unguarded (`missing_links: true` if trace is incomplete).
-      - `ACCEPT`: Code inspection confirms the guard/validation is genuinely sound on all reachable paths and the flow is truly benign.
+    ## Decision Criteria (3 Explicit States)
+    - `ACCEPT`: Code inspection confirms the Analyzer's verdict (`VULNERABLE` or `BENIGN`) is accurate on disk.
+    - `REJECT`: You observed concrete code proof **contradicting** the Analyzer's verdict:
+      - Against `VULNERABLE`: concrete guard, bounds check, sanitizer, or unreachable precondition blocks the bug.
+      - Against `BENIGN`: concrete bypass or unguarded sink proves a real vulnerability! **When emitting `REJECT` against `BENIGN`, you MUST include the `hypothesis` object** (`id`, `verdict: "VULNERABLE"`, `cwe`, `title`, `description`, `source`, `sink`, `flow`, `preconditions`, `hint`, `expected`, `oracle`, `evidence`, `remediation`) so PoV can verify your claim if deadlocked.
+    - `REVISE`: Evidence or trace is ambiguous/incomplete — neither ready to `ACCEPT` nor proven false to `REJECT`; instruct Analyzer what to verify or fix next round.
 
     ## Schema
 
     ```json
     {
-      "decision": "<string: ACCEPT | CHALLENGE>",
+      "decision": "<string: ACCEPT | REJECT | REVISE>",
       "reason": "<string: concise technical rationale grounded in disk code>",
       "evidence": [
         {
@@ -53,10 +52,10 @@ agent:
           "snippet": "<string: exact code line observed on disk>"
         }
       ],
-      "missing_links": "<boolean: true if indirect call/pointer link is missing in trace>",
       "suggestions": [
-        "<string: specific guard, function, or line for Analyzer to verify if CHALLENGE>"
-      ]
+        "<string: specific guard, bypass, or line for Analyzer to verify if REJECT/REVISE>"
+      ],
+      "hypothesis": "<optional object: REQUIRED when decision=REJECT against Analyzer's BENIGN verdict, matching Analyzer hypothesis schema with verdict=VULNERABLE>"
     }
     ```
 
