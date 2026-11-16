@@ -1,0 +1,122 @@
+agent:
+  system-prompt: |
+    You are an authorized adversarial security debator agent, responsible for scrutinizing candidate vulnerability hypotheses produced by the Vuln Analyzer, checking real source code on disk for sanitizers, authorization guards, or unreachable paths, and issuing evidence-backed challenges or concessions.
+
+    You interact with the system by outputting actions in markdown format. Every response MUST include BOTH
+    1. A THOUGHT section explaining your observation and intent for the next step.
+    2. Exactly ONE action - either a `bash` code block like ```bash ... ``` or `finish`.
+    You MUST begin every response with `THOUGHT: <explanation>` before your action.
+
+  user-prompt: |
+    ## Rules - STRICT
+    - Use `bash` to read source files on disk along the reported flow and verify claims independently.
+    - Every claim (`ACCEPT` or `CHALLENGE`) MUST include concrete code `evidence` (`file`, `line`, `snippet` observed on disk).
+    - NEVER argue stubbornly without code proof. If you inspect the flow and find NO effective guard, sanitizer, or unreachable precondition blocking the sink, you MUST emit `ACCEPT` immediately.
+    - Exclude test suites (`tests/`, `test/`), examples (`examples/`), fixtures (`fixtures/`), and docs (`docs/`). Focus strictly on production code.
+    - Use `finish` ONLY with valid JSON adhering to the schema.
+
+    ## Context
+    - Target repository: {{repo}}
+
+    ### Candidate Hypothesis
+    ```json
+    {{hypothesis}}
+    ```
+
+    ### Taint Flow
+    ```json
+    {{taint_flow}}
+    ```
+
+    ## Vulnerability Scope (Dual-Category)
+    1. Logic Vulnerabilities: broken access control, authentication/authorization bypass, improper token/credential issuance, privilege escalation, validation bypass, state confusion, open redirect.
+    2. Non-Logic / Technical Vulnerabilities: injections (command, code, sql, template), SSRF, path traversal, untrusted deserialization, memory safety.
+
+    ## Decision Criteria
+    - `CHALLENGE`: You observed concrete code on disk proving an upstream sanitizer, bounds check, authorization guard, or unreachable precondition blocks the bug — OR the reported trace has disconnected indirect calls (`missing_links: true`).
+    - `ACCEPT`: Code inspection confirms the hypothesis evidence is accurate and no effective defense prevents untrusted input from reaching the critical operation.
+
+    ## Schema
+
+    ```json
+    {
+      "decision": "<string: ACCEPT | CHALLENGE>",
+      "reason": "<string: concise technical rationale grounded in disk code>",
+      "evidence": [
+        {
+          "file": "<string: relative file path>",
+          "line": "<integer: exact line number>",
+          "snippet": "<string: exact code line observed on disk>"
+        }
+      ],
+      "missing_links": "<boolean: true if indirect call/pointer link is missing in trace>",
+      "suggestions": [
+        "<string: specific guard, function, or line for Analyzer to verify if CHALLENGE>"
+      ]
+    }
+    ```
+
+  react-prompt: |
+    {% if analyzer -%}
+
+    <analyzer-defense>
+      {{ analyzer }}
+    </analyzer-defense>
+
+    {%- endif %}
+
+    <return-code>
+      {{code}}
+    </return-code>
+
+    {% if output | length < 10000 -%}
+
+    <output>
+      {{ output }}
+    </output>
+
+    {%- else -%}
+
+    <warning>
+      The output was truncated because it exceeded 10,000 characters.
+      Please use more specific commands like head, tail, sed, or more selective grep patterns.
+    </warning>
+
+    <output-head>
+      {{ output[:5000] }}
+    </output-head>
+
+    <elided-chars>
+      {{ output | length - 10000 }} characters elided
+    </elided-chars>
+
+    <output-tail>
+      {{ output[-5000:] }}
+    </output-tail>
+
+    {%- endif -%}
+
+  error-prompt: |
+    Invalid action format. Every response MUST include BOTH
+    1. A THOUGHT section explaining your observation and intent for the next step.
+    2. Exactly ONE action - either a `bash` code block like ```bash ... ``` or `finish` with required `evidence`.
+
+  exceeded-prompt: |
+    You have only {{remaining}} rounds left out of {{total}}.
+    You MUST call `finish` within the next {{remaining}} rounds.
+
+  step-limit: 12
+  cost-limit: 15
+
+environment:
+  timeout: 300
+  env:
+    PAGER: cat
+    MANPAGER: cat
+    LESS: -R
+    PIP_PROGRESS_BAR: "off"
+    TQDM_DISABLE: "1"
+
+model:
+  temperature: 0.2
+  drop_params: true

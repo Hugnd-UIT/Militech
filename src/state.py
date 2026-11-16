@@ -1,223 +1,334 @@
 import json
+import re
+import shutil
 from pathlib import Path
 
+from models import tracker
+from src.dedup import rank_target_files
 
-from src.dedup import score, dedup, rank, combine
+
+REQUIRED_REPORT_SECTIONS = (
+    "### Summary",
+    "### Details",
+    "### PoC",
+    "### Impact",
+    "### Remediation",
+)
+
+
+def _num_suffix(flow_id: str) -> str:
+    """Extract numeric suffix like '001' from 'flow_001' or return sanitized id."""
+    m = re.search(r"(\d+)$", str(flow_id or ""))
+    if m:
+        return f"{int(m.group(1)):03d}"
+    clean = re.sub(r"[^a-zA-Z0-9_-]", "_", str(flow_id or "001")).strip("_")
+    return clean or "001"
 
 
 class State:
-    score = staticmethod(score)
-    dedup = staticmethod(dedup)
-    rank = staticmethod(rank)
-    combine = staticmethod(combine)
+    """Manages structured artifacts under outputs/ across all 4 pipeline phases."""
 
     def __init__(self, outputs_path="outputs"):
-        self.outputs_path = Path(outputs_path)
-        self.outputs_path.mkdir(parents=True, exist_ok=True)
+        self.outputs_path = Path(outputs_path).resolve()
+        self.build_dir = self.outputs_path / "build"
+        self.cache_dir = self.outputs_path / "cache"
+        self.graph_dir = self.outputs_path / "graph"
+        self.hypothesis_dir = self.outputs_path / "hypothesis"
+        self.approved_dir = self.hypothesis_dir / "approved"
+        self.rejected_dir = self.hypothesis_dir / "rejected"
+        self.pov_dir = self.outputs_path / "pov"
+        self.report_dir = self.outputs_path / "report"
 
-        self.flows_file = None
-        self.total_flows = 0
-        self.index = 0
-        self.flow = None
-
-        self.candidate = None
-        self.target = None
-        self.debate_round = 0
-        self.max_debate = 10
-
-        self.pov_round = 0
-        self.max_pov = 10
-
-        self.confirmed = []
-        self.rejected = []
         self.harness = None
+        self.first_pov_sec = None
+        self.ensure_dirs()
 
-    def flow_dir(self, flow_id):
-        p = self.outputs_path / str(flow_id)
-        p.mkdir(parents=True, exist_ok=True)
-        return p
+    def ensure_dirs(self):
+        """Create standard outputs/ directory layout cleanly."""
+        for d in (
+            self.build_dir,
+            self.cache_dir,
+            self.graph_dir,
+            self.approved_dir,
+            self.rejected_dir,
+            self.pov_dir,
+            self.report_dir,
+        ):
+            d.mkdir(parents=True, exist_ok=True)
 
-    def load_flows(self, path=None):
-        p = Path(path) if path else self.outputs_path / "taint-flows.jsonl"
-        raw = []
-        if p.exists():
-            with open(p, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if content:
-                    decoder = json.JSONDecoder()
-                    idx = 0
-                    while idx < len(content):
-                        while idx < len(content) and content[idx].isspace():
-                            idx += 1
-                        if idx >= len(content):
-                            break
+    def check_structure(self) -> tuple[bool, list[str]]:
+        """Verify required directories exist and list any unexpected root entries."""
+        expected = {"build", "cache", "graph", "hypothesis", "pov", "report"}
+        missing = sorted(d for d in expected if not (self.outputs_path / d).is_dir())
+        extra = sorted(
+            p.name for p in self.outputs_path.iterdir()
+            if p.name not in expected
+        ) if self.outputs_path.exists() else []
+        return (not missing and not extra), missing + extra
+
+    # --- Phase 1: Build ---
+    def get_build_status(self) -> dict:
+        status_file = self.build_dir / "status.json"
+        if not status_file.exists():
+            return {"status": "PENDING"}
+        try:
+            data = json.loads(status_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+        return {"status": "INVALID"}
+
+    # --- Phase 2: Graph & Chunks ---
+    def call_graph_path(self) -> Path:
+        return self.graph_dir / "call-graph.json"
+
+    def call_flows_path(self) -> Path:
+        return self.graph_dir / "call-flows.jsonl"
+
+    def get_chunks(self) -> list[dict]:
+        """Inspect chunk_xxx directories and derive target_file + retrieved flows."""
+        chunks = []
+        if not self.graph_dir.exists():
+            return chunks
+
+        for cdir in sorted(self.graph_dir.glob("chunk_*"), key=lambda p: p.name):
+            if not cdir.is_dir():
+                continue
+            num = _num_suffix(cdir.name)
+            in_file = cdir / f"chunk-flow-{num}.jsonl"
+            out_file = cdir / f"taint-flow-{num}.jsonl"
+
+            target_file = None
+            in_count = 0
+            if in_file.exists():
+                for line in in_file.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    in_count += 1
+                    if target_file is None:
                         try:
-                            obj, end = decoder.raw_decode(content, idx)
-                            if isinstance(obj, dict):
-                                raw.append(obj)
-                            elif isinstance(obj, list):
-                                raw.extend([x for x in obj if isinstance(x, dict)])
-                            idx = end
+                            obj = json.loads(line)
+                            target_file = str(obj.get("dst", {}).get("file") or "").replace("\\", "/").strip().lstrip("/")
                         except Exception:
-                            idx += 1
-        processed = combine(raw)
-        self.flows_file = p
-        self.total_flows = len(processed)
-        self.index = 0
-        if p.exists() or processed:
-            with open(p, "w", encoding="utf-8") as f:
-                for flow in processed:
-                    f.write(json.dumps(flow, ensure_ascii=False) + "\n")
-        return self.total_flows
+                            pass
 
-    def next_flow(self):
-        if self.index >= self.total_flows or not self.flows_file or not self.flows_file.exists():
-            self.flow = None
+            flows = []
+            if out_file.exists():
+                for line in out_file.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                        if isinstance(obj, dict):
+                            flows.append(obj)
+                    except Exception:
+                        pass
+
+            chunks.append({
+                "chunk_id": cdir.name,
+                "num": num,
+                "target_file": target_file or "",
+                "input_file": str(in_file),
+                "output_file": str(out_file),
+                "input_count": in_count,
+                "retrieved": out_file.exists(),
+                "flows": flows,
+            })
+        return chunks
+
+    def next_chunk_num(self) -> str:
+        existing = [int(_num_suffix(c["chunk_id"])) for c in self.get_chunks() if _num_suffix(c["chunk_id"]).isdigit()]
+        return f"{(max(existing) + 1) if existing else 1:03d}"
+
+    def next_flow_index(self) -> int:
+        max_idx = 0
+        for chunk in self.get_chunks():
+            for flow in chunk["flows"]:
+                m = re.search(r"(\d+)$", str(flow.get("id") or ""))
+                if m:
+                    max_idx = max(max_idx, int(m.group(1)))
+        return max_idx + 1
+
+    def pending_files(self) -> list[dict]:
+        done = [c["target_file"] for c in self.get_chunks() if c["target_file"]]
+        return rank_target_files(self.call_flows_path(), done_files=done)
+
+    def create_chunk(self, target_file: str) -> dict | None:
+        """Slice all call-flows matching target_file into chunk_xxx/chunk-flow-xxx.jsonl."""
+        flows_file = self.call_flows_path()
+        if not flows_file.exists():
             return None
 
-        target_idx = self.index
-        flow = None
-        with open(self.flows_file, "r", encoding="utf-8") as f:
-            for current_idx, line in enumerate(f):
-                line = line.strip()
-                if not line:
-                    continue
-                if current_idx == target_idx:
-                    try:
-                        flow = json.loads(line)
-                    except Exception:
-                        flow = None
-                    break
+        norm_target = str(target_file).replace("\\", "/").strip().lstrip("/")
+        for existing in self.get_chunks():
+            if existing["target_file"] == norm_target:
+                return existing
 
-        self.index += 1
-        self.flow = flow
-        self.candidate = None
-        self.target = None
-        self.debate_round = 0
-        self.pov_round = 0
-        return self.flow
-
-    def has_flows(self):
-        return self.index < self.total_flows
-
-    def set_candidate(self, hypothesis):
-        self.candidate = hypothesis
-
-    def approve(self, hypothesis):
-        self.target = hypothesis
-
-    def reject(self, reason=""):
-        hyp = self.candidate or self.target
-        if hyp:
-            self.rejected.append({"hypothesis": hyp, "reason": reason})
-        self.candidate = None
-        self.target = None
-
-    def confirm(self, verdict):
-        self.confirmed.append({
-            "flow": self.flow,
-            "hypothesis": self.target,
-            "verdict": verdict,
-        })
-
-    def inc_debate(self):
-        self.debate_round += 1
-        return self.debate_round
-
-    def debate_exceeded(self):
-        return self.debate_round >= self.max_debate
-
-    def inc_pov(self):
-        self.pov_round += 1
-        return self.pov_round
-
-    def pov_exceeded(self):
-        return self.pov_round >= self.max_pov
-
-    def save_hypothesis(self, flow_id, hypothesis):
-        p = self.flow_dir(flow_id) / "hypotheses.json"
-        with open(p, "w", encoding="utf-8") as f:
-            json.dump(hypothesis, f, indent=2, ensure_ascii=False)
-        return str(p)
-
-    def load_hypothesis(self, flow_id):
-        p = self.flow_dir(flow_id) / "hypotheses.json"
-        if p.exists():
-            with open(p, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return None
-
-    def save_script(self, flow_id, code):
-        p = self.flow_dir(flow_id) / "scripts.py"
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(code)
-        return str(p)
-
-    def load_script(self, flow_id):
-        p = self.flow_dir(flow_id) / "scripts.py"
-        if p.exists():
-            with open(p, "r", encoding="utf-8") as f:
-                return f.read()
-        return ""
-
-    def record(self, flow_id, attempt_num, script_code, exec_result, status="RETRYING"):
-        p = self.flow_dir(flow_id) / "results.json"
-        data = {}
-        if p.exists():
+        matched_lines = []
+        for raw in flows_file.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line:
+                continue
             try:
-                with open(p, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+                obj = json.loads(line)
             except Exception:
-                data = {}
+                continue
+            dst_f = str(obj.get("dst", {}).get("file") or "").replace("\\", "/").strip().lstrip("/")
+            if dst_f == norm_target or dst_f.endswith(norm_target) or norm_target.endswith(dst_f):
+                matched_lines.append(line)
 
-        data["status"] = status
-        data["total"] = attempt_num
-        data[f"pov_{attempt_num}"] = script_code
-        data[f"res_{attempt_num}"] = exec_result
+        if not matched_lines:
+            return None
 
-        with open(p, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        return str(p)
+        num = self.next_chunk_num()
+        cdir = self.graph_dir / f"chunk_{num}"
+        cdir.mkdir(parents=True, exist_ok=True)
+        in_file = cdir / f"chunk-flow-{num}.jsonl"
+        out_file = cdir / f"taint-flow-{num}.jsonl"
+        in_file.write_text("\n".join(matched_lines) + "\n", encoding="utf-8")
 
-    def update_status(self, flow_id, status):
-        p = self.flow_dir(flow_id) / "results.json"
-        if p.exists():
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                data["status"] = status
-                with open(p, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-            except Exception:
-                pass
-
-    def load_results(self, flow_id):
-        p = self.flow_dir(flow_id) / "results.json"
-        if p.exists():
-            with open(p, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return None
-
-    def save_json(self, name, data):
-        path = self.outputs_path / name
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        return str(path)
-
-    def load_json(self, name):
-        path = self.outputs_path / name
-        if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return None
-
-    def summary(self):
         return {
-            "total_flows": self.total_flows,
-            "processed": self.index,
-            "confirmed": len(self.confirmed),
-            "rejected": len(self.rejected),
+            "chunk_id": cdir.name,
+            "num": num,
+            "target_file": norm_target,
+            "input_file": str(in_file),
+            "output_file": str(out_file),
+            "input_count": len(matched_lines),
+            "retrieved": out_file.exists(),
+            "flows": [],
         }
 
+    def all_flows(self) -> list[dict]:
+        items = []
+        for c in self.get_chunks():
+            for flow in c["flows"]:
+                items.append((c["chunk_id"], flow))
+        return items
 
-__all__ = ["State"]
+    def find_flow(self, flow_id: str) -> tuple[str | None, dict | None]:
+        target_num = _num_suffix(flow_id)
+        for c in self.get_chunks():
+            for flow in c["flows"]:
+                fid = str(flow.get("id") or "")
+                if fid == flow_id or _num_suffix(fid) == target_num:
+                    return c["output_file"], flow
+        return None, None
+
+    # --- Phase 3: Hypothesis & Debate ---
+    def save_hypothesis(self, flow_id: str, data: dict, approved: bool) -> str:
+        num = _num_suffix(flow_id)
+        filename = f"hypothesis_{num}.json"
+        dest_dir = self.approved_dir if approved else self.rejected_dir
+        other_dir = self.rejected_dir if approved else self.approved_dir
+
+        other_file = other_dir / filename
+        if other_file.exists():
+            other_file.unlink()
+
+        dest_file = dest_dir / filename
+        payload = dict(data)
+        payload["flow_id"] = flow_id
+        payload["decision"] = "ACCEPT" if approved else "REJECT"
+        dest_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        return str(dest_file)
+
+    def list_hypotheses(self) -> tuple[dict[str, dict], dict[str, dict]]:
+        """Return (approved_map, rejected_map) keyed by numeric suffix '001'."""
+        def _scan(folder: Path) -> dict[str, dict]:
+            res = {}
+            if not folder.exists():
+                return res
+            for p in sorted(folder.glob("hypothesis_*.json")):
+                try:
+                    data = json.loads(p.read_text(encoding="utf-8"))
+                    res[_num_suffix(p.stem)] = data
+                except Exception:
+                    pass
+            return res
+
+        return _scan(self.approved_dir), _scan(self.rejected_dir)
+
+    # --- Phase 4: PoV & Report ---
+    def pov_paths(self, flow_id: str) -> tuple[Path, Path]:
+        num = _num_suffix(flow_id)
+        pdir = self.pov_dir / f"pov_{num}"
+        pdir.mkdir(parents=True, exist_ok=True)
+        return pdir / f"script_{num}.py", pdir / f"result_{num}.json"
+
+    def list_pov_results(self) -> dict[str, dict]:
+        res = {}
+        if not self.pov_dir.exists():
+            return res
+        for pdir in sorted(self.pov_dir.glob("pov_*")):
+            if not pdir.is_dir():
+                continue
+            num = _num_suffix(pdir.name)
+            rfile = pdir / f"result_{num}.json"
+            if rfile.exists():
+                try:
+                    res[num] = json.loads(rfile.read_text(encoding="utf-8"))
+                except Exception:
+                    res[num] = {"status": "INVALID"}
+            else:
+                res[num] = {"status": "PENDING"}
+        return res
+
+    def next_vuln_id(self) -> str:
+        existing = [
+            int(_num_suffix(p.name))
+            for p in self.report_dir.glob("vuln_*")
+            if p.is_dir() and _num_suffix(p.name).isdigit()
+        ]
+        return f"vuln_{(max(existing) + 1) if existing else 1:03d}"
+
+    def list_reports(self) -> list[dict]:
+        reports = []
+        if not self.report_dir.exists():
+            return reports
+        for vdir in sorted(self.report_dir.glob("vuln_*")):
+            if not vdir.is_dir():
+                continue
+            md = vdir / "report.md"
+            pov = vdir / "pov.py"
+            reports.append({
+                "vuln_id": vdir.name,
+                "report_exists": md.exists() and md.stat().st_size > 0,
+                "pov_exists": pov.exists() and pov.stat().st_size > 0,
+            })
+        return reports
+
+    def save_report(self, markdown_content: str, pov_script_path: str | Path, vuln_id: str | None = None) -> tuple[bool, str]:
+        """Validate required GitHub Advisory headings, copy pov.py, and write report.md."""
+        missing = [sec for sec in REQUIRED_REPORT_SECTIONS if sec.lower() not in markdown_content.lower()]
+        if missing:
+            return False, f"Missing required sections: {', '.join(missing)}"
+
+        src_pov = Path(pov_script_path)
+        if not src_pov.exists():
+            return False, f"PoV script not found: {src_pov}"
+
+        vid = vuln_id or self.next_vuln_id()
+        vdir = self.report_dir / vid
+        vdir.mkdir(parents=True, exist_ok=True)
+
+        shutil.copy2(src_pov, vdir / "pov.py")
+        (vdir / "report.md").write_text(markdown_content.strip() + "\n", encoding="utf-8")
+        return True, str(vdir)
+
+    # --- Metrics ---
+    def save_metrics(self, elapsed_sec: float) -> str:
+        """Write minimal QuotaTracker telemetry + elapsed timings to outputs/cache/metrics.json."""
+        data = {"elapsed_sec": round(float(elapsed_sec), 2)}
+        if self.first_pov_sec is not None:
+            data["first_pov_sec"] = round(float(self.first_pov_sec), 2)
+        data.update(tracker.tracker.summary())
+
+        out = self.cache_dir / "metrics.json"
+        out.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return str(out)
+
+
+__all__ = ["State", "REQUIRED_REPORT_SECTIONS"]

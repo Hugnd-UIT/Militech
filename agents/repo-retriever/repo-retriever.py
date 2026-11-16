@@ -368,5 +368,194 @@ class RepoRetrieverAgent(BaseAgent):
         log.info(f"[{self.name}] Agent flows saved: {len(ordered)} flows")
         return taint_flows
 
+    def _normalize_flow(self, obj, flow_id=None):
+        """Normalize sink.func and assign default confidence/id."""
+        if not isinstance(obj, dict) or not obj.get("sink") or not obj.get("source"):
+            return None
+        item = dict(obj)
+        if flow_id:
+            item["id"] = flow_id
+        try:
+            item["confidence"] = float(item.get("confidence") or 0.85)
+        except Exception:
+            item["confidence"] = 0.85
+        sink = dict(item.get("sink") or {})
+        if "function" in sink and "func" not in sink:
+            sink["func"] = sink.pop("function")
+        item["sink"] = sink
+        return item
+
+    def _read_flows_from_file(self, path_str):
+        """Read extracted JSON array or JSONL flows from sandbox or host."""
+        raw = ""
+        if self.sandbox:
+            _, raw = self.execute(f"cat {path_str} 2>/dev/null")
+        if (not raw or not raw.strip()) and Path(path_str).exists():
+            raw = Path(path_str).read_text(encoding="utf-8")
+        if not raw or not raw.strip():
+            return []
+        raw = raw.strip()
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                return [data]
+        except Exception:
+            pass
+        parsed = []
+        for l in raw.splitlines():
+            l = l.strip()
+            if l:
+                try:
+                    parsed.append(json.loads(l))
+                except Exception:
+                    pass
+        return parsed
+
+    def run_chunk(
+        self,
+        repo_path,
+        target_file,
+        chunk_input_path,
+        chunk_output_path,
+        call_graph_path="/outputs/graph/call-graph.json",
+        start_flow_idx=1,
+        task_hint=None,
+    ):
+        """Retrieve and stitch complete taint flows for a single target-file chunk."""
+        import logging
+        log = logging.getLogger("vulnalysis")
+
+        self.memory.clear()
+        self.step = 0
+        self.cmd_history = []
+        self._start_cost = tracker.tracker.get_agent_stats(self.name).get("cost", 0.0)
+
+        if self.sandbox:
+            self.execute(f"mkdir -p $(dirname {chunk_output_path}) && : > {chunk_output_path}")
+
+        files_count = len(self.scan(repo_path))
+        graph = self.load_graph(repo_path, call_graph_path)
+
+        initial_task = self.render(
+            self.user_prompt,
+            repo=str(repo_path),
+            target=str(target_file),
+            files=files_count,
+            nodes=len(graph.get("nodes", [])),
+            edges=len(graph.get("edges", [])),
+            call_graph=str(call_graph_path),
+            call_flows=str(chunk_input_path),
+            taint_flows=str(chunk_output_path),
+        )
+        if task_hint:
+            initial_task += f"\n\n## Coordinator Note\n{task_hint}\n"
+
+        self.messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": initial_task},
+        ]
+
+        collected = []
+
+        def finish(thought, reply):
+            extracted = self.extract_json(reply)
+            if not extracted:
+                extracted = self._read_flows_from_file(chunk_output_path)
+            if extracted is None:
+                return False, None
+            items = extracted if isinstance(extracted, list) else [extracted]
+            collected.clear()
+            for x in items:
+                norm = self._normalize_flow(x)
+                if norm:
+                    collected.append(norm)
+            self.log_action("finish")
+            self.log(thought=thought, action="finish", observation=f"Chunk retrieval completed ({len(collected)} flows)")
+            return True, True
+
+        self.loop(finish=finish, default=True)
+        if not collected:
+            for x in self._read_flows_from_file(chunk_output_path):
+                norm = self._normalize_flow(x)
+                if norm:
+                    collected.append(norm)
+
+        # Deduplicate per sink inside chunk and assign global flow_xxx IDs
+        from src.dedup import dedup, rank
+        unique_flows = rank(dedup(collected))
+        final_flows = []
+        for offset, flow in enumerate(unique_flows):
+            flow["id"] = f"flow_{start_flow_idx + offset:03d}"
+            final_flows.append(flow)
+
+        payload = "\n".join(json.dumps(f, ensure_ascii=False) for f in final_flows)
+        if payload:
+            payload += "\n"
+
+        host_out = Path(chunk_output_path)
+        if host_out.parent.exists() or not str(chunk_output_path).startswith("/outputs"):
+            host_out.parent.mkdir(parents=True, exist_ok=True)
+            host_out.write_text(payload, encoding="utf-8")
+        if self.sandbox:
+            self.execute(f"cat << 'EOF' > {chunk_output_path}\n{payload}EOF")
+
+        log.info(f"[{self.name}] Chunk saved: {len(final_flows)} flows -> {chunk_output_path}")
+        return final_flows
+
+    def stitch_flow(self, repo_path, flow_obj, output_file, call_graph_path="/outputs/graph/call-graph.json", hint=""):
+        """Deeply stitch indirect calls/function pointers for one specific flow."""
+        self.memory.clear()
+        self.step = 0
+        self.cmd_history = []
+
+        flow_str = json.dumps(flow_obj, indent=2, ensure_ascii=False)
+        task = (
+            f"## Task: Deep Indirect Call Stitching\n"
+            f"Target repository: {repo_path}\n"
+            f"Call graph: {call_graph_path}\n"
+            f"Reason: {hint or 'Resolve missing function pointer, callback, or interface links in this trace.'}\n\n"
+            f"### Current Flow\n```json\n{flow_str}\n```\n\n"
+            f"Inspect source files on disk via `bash` to resolve the missing links from entry point to critical operation, "
+            f"then output `finish` with the single updated JSON flow object (preserving `id`: `{flow_obj.get('id')}`)."
+        )
+        self.messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": task},
+        ]
+
+        def finish(thought, reply):
+            extracted = self.extract_json(reply)
+            if isinstance(extracted, list) and extracted:
+                extracted = extracted[0]
+            norm = self._normalize_flow(extracted, flow_id=flow_obj.get("id"))
+            if norm:
+                self.log_action("finish")
+                self.log(thought=thought, action="finish", observation=f"Stitched flow {norm['id']}")
+                return True, norm
+            return False, None
+
+        updated = self.loop(finish=finish, default=flow_obj)
+        if isinstance(updated, dict) and Path(output_file).exists():
+            lines = []
+            replaced = False
+            for raw in Path(output_file).read_text(encoding="utf-8").splitlines():
+                if not raw.strip():
+                    continue
+                try:
+                    cur = json.loads(raw)
+                    if cur.get("id") == updated.get("id"):
+                        lines.append(json.dumps(updated, ensure_ascii=False))
+                        replaced = True
+                        continue
+                except Exception:
+                    pass
+                lines.append(raw)
+            if not replaced:
+                lines.append(json.dumps(updated, ensure_ascii=False))
+            Path(output_file).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return updated
+
 
 __all__ = ["RepoRetrieverAgent"]

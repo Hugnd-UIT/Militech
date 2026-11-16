@@ -1,0 +1,53 @@
+{
+  "name": "Vuln Debator",
+  "description": "Adversarially challenges analyzer hypotheses by verifying guards and sanitizers on disk.",
+  "url": "https://localhost",
+  "provider": {
+    "organization": "Vulnalysis",
+    "url": "https://github.com/Hugnd-UIT/Vulnalysis"
+  },
+  "version": "1.0.0",
+  "authentication": {
+    "schemes": [
+      "OAuth2"
+    ]
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "debate_challenging",
+      "name": "Challenge Hypothesis",
+      "description": "Inspect source code to uncover sanitizers, bounds checks, or unreachable paths with evidence.",
+      "tags": [
+        "adversarial-review",
+        "false-positive-filter",
+        "evidence"
+      ],
+      "examples": [
+        "Challenge hypothesis by citing upstream validation or bounds guard on disk"
+      ]
+    },
+    {
+      "id": "debate_conceding",
+      "name": "Concede Valid Bug",
+      "description": "Accept hypothesis immediately when code evidence proves the vulnerability is unguarded.",
+      "tags": [
+        "consensus",
+        "triage",
+        "verification"
+      ],
+      "examples": [
+        "Accept finding once analyzer proves guard bypass with concrete code lines"
+      ]
+    }
+  ]
+}

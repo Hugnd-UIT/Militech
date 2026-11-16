@@ -11,6 +11,8 @@ from src.memory import Memory
 
 
 class BaseAgent:
+    extra_actions = ()
+
     def __init__(self, name, sandbox=None, config_path=None, provider_cls=OpenAI):
         self.name = name
         self.sandbox = sandbox
@@ -102,7 +104,7 @@ class BaseAgent:
         return False, ""
 
     # ReAct loop
-    def loop(self, finish=None, default=False):
+    def loop(self, finish=None, default=False, action_handler=None):
         while not self.is_step_exceeded() and not self.is_cost_exceeded():
             
             # Check if need compact
@@ -164,6 +166,13 @@ class BaseAgent:
                 self.messages.append({"role": "user", "content": obs_text})
                 if warning:
                     self.messages.append({"role": "user", "content": warning})
+            elif action in self.extra_actions and action_handler:
+                self.log_action(action, command)
+                code, output = action_handler(action, command)
+                self.log(thought=thought, action=action, command=command, observation=str(output)[:500])
+                obs_text = self.render(self.react_prompt, code=code, output=output)
+                obs_text += self.check_exceeded()
+                self.messages.append({"role": "user", "content": obs_text})
             else:
                 # Error
                 self.log_error("Invalid action")
@@ -226,6 +235,15 @@ class BaseAgent:
         thought = re.sub(r"\n\s*(?:ACTION|Action)[\s:\-]+.*$", "", thought, flags=re.IGNORECASE).strip()
 
         # Extract action
+        for act in getattr(self, "extra_actions", ()) or ():
+            fence_match = re.search(rf"```{re.escape(act)}\b[ \t\r\n]*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+            if fence_match:
+                return thought, act, fence_match.group(1).strip()
+            if re.search(rf"(?:ACTION|Action)[\s:\-]+{re.escape(act)}\b", text, re.IGNORECASE):
+                any_block = re.search(r"```[a-zA-Z0-9_\-]*\s*(.*?)\s*```", text, re.DOTALL)
+                return thought, act, (any_block.group(1).strip() if any_block else "")
+            if act == "check_status" and re.search(r"^\s*check_status\s*$", text, re.MULTILINE | re.IGNORECASE):
+                return thought, act, ""
         bash_match = re.search(r"```(?:bash|sh|shell)(?:[ \t\r\n]+)(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
         if not bash_match:
             generic = re.search(r"```\s*((?:#!\/bin\/bash|\$|cat|grep|ls|find|gcc|clang|make|python3?|curl|echo|head|tail|mkdir|cd|\.\/)[\s\S]*?)\s*```", text, re.DOTALL)
@@ -313,7 +331,7 @@ class BaseAgent:
         elif action == "finish":
             logger.info(f"  [{self.name}] Action: finish")
         elif action:
-            logger.info(f"  [{self.name}] Action: {action}")
+            logger.info(f"  [{self.name}] Action: {action}" + (f" `{cmd[:120]}`" if cmd else ""))
 
     def log_error(self, msg):
         import logging

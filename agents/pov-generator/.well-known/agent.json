@@ -1,0 +1,66 @@
+{
+  "name": "PoV Generator",
+  "description": "Crafts Python PoV scripts, runs them in sandbox, and iterates on verifier feedback.",
+  "url": "https://localhost",
+  "provider": {
+    "organization": "Hugnd-UIT",
+    "url": "https://github.com/Hugnd-UIT"
+  },
+  "version": "1.0.0",
+  "authentication": {
+    "schemes": [
+      "OAuth2"
+    ]
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "pov_crafting",
+      "name": "Craft PoV Script",
+      "description": "Write standalone Python reproduction script targeting approved hypothesis preconditions.",
+      "tags": [
+        "exploit-synthesis",
+        "python",
+        "payload"
+      ],
+      "examples": [
+        "Craft script_001.py in outputs/pov/pov_xxx/ to trigger the target sink"
+      ]
+    },
+    {
+      "id": "pov_executing",
+      "name": "Execute in Sandbox",
+      "description": "Run PoV script inside sandbox and save stdout, stderr, and exit code to result_001.json.",
+      "tags": [
+        "sandbox",
+        "telemetry",
+        "execution"
+      ],
+      "examples": [
+        "Run script_001.py and record runtime output and exit status"
+      ]
+    },
+    {
+      "id": "pov_refining",
+      "name": "Refine PoV Payload",
+      "description": "Fix script syntax, runtime environment issues, or trigger payloads from verifier feedback.",
+      "tags": [
+        "refinement",
+        "retry",
+        "feedback"
+      ],
+      "examples": [
+        "Adjust payload arguments or binary invocation based on verifier feedback"
+      ]
+    }
+  ]
+}

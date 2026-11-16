@@ -328,4 +328,49 @@ def filter(flows):
     return cleaned
 
 
-__all__ = ["score", "dedup", "rank", "combine", "filter"]
+def rank_target_files(flows_path, done_files=None):
+    """Group filtered call-flows by file and return pending files ranked by risk."""
+    import json
+    from pathlib import Path
+    from utils.skip import is_non_prod
+
+    path = Path(flows_path)
+    if not path.exists():
+        return []
+
+    done_norm = {str(f).replace("\\", "/").strip().lstrip("/") for f in (done_files or [])}
+    grouped = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        dst_f = str(obj.get("dst", {}).get("file") or "").replace("\\", "/").strip().lstrip("/")
+        if not dst_f or is_non_prod(dst_f) or dst_f in done_norm:
+            continue
+        grouped.setdefault(dst_f, []).append(score(obj))
+
+    ranked = []
+    for fpath, scores in grouped.items():
+        ranked.append({
+            "file": fpath,
+            "flow_count": len(scores),
+            "max_score": max(scores) if scores else 0,
+            "total_score": sum(scores),
+        })
+
+    ranked.sort(
+        key=lambda item: (
+            0 if item["file"].startswith("src/") else 1,
+            -item["max_score"],
+            -item["total_score"],
+            item["file"],
+        )
+    )
+    return ranked
+
+
+__all__ = ["score", "dedup", "rank", "combine", "filter", "rank_target_files"]

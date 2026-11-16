@@ -1,0 +1,66 @@
+{
+  "name": "PoV Verifier",
+  "description": "Independently runs PoV scripts in sandbox and verifies sink location and CWE mechanism.",
+  "url": "https://localhost",
+  "provider": {
+    "organization": "Vulnalysis",
+    "url": "https://github.com/Hugnd-UIT/Vulnalysis"
+  },
+  "version": "1.0.0",
+  "authentication": {
+    "schemes": [
+      "OAuth2"
+    ]
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "verify_evaluating",
+      "name": "Verify Dual Alignment",
+      "description": "Re-run PoV script directly in sandbox and check location match plus CWE mechanism match.",
+      "tags": [
+        "dual-alignment",
+        "sandbox-verify",
+        "oracle"
+      ],
+      "examples": [
+        "Execute script_001.py and confirm target sink crash or security oracle"
+      ]
+    },
+    {
+      "id": "verify_diagnosing",
+      "name": "Diagnose PoV Defects",
+      "description": "Separate script or environment errors from safe code and emit retry suggestions.",
+      "tags": [
+        "defect-triage",
+        "retry",
+        "feedback"
+      ],
+      "examples": [
+        "Report missing runtime dependency or wrong argument back to PoV Generator"
+      ]
+    },
+    {
+      "id": "verify_reporting",
+      "name": "Report Final Verdict",
+      "description": "Emit final CONFIRMED or UNCONFIRMED verdict with runtime proof.",
+      "tags": [
+        "verdict",
+        "proof",
+        "audit"
+      ],
+      "examples": [
+        "Return CONFIRMED verdict with reproducible runtime evidence"
+      ]
+    }
+  ]
+}

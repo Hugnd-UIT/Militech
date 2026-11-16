@@ -1,0 +1,66 @@
+{
+  "name": "Repo Builder",
+  "description": "Detects manifests, generates build.sh, and compiles the repository in sandbox.",
+  "url": "https://localhost",
+  "provider": {
+    "organization": "Vulnalysis",
+    "url": "https://github.com/Hugnd-UIT/Vulnalysis"
+  },
+  "version": "1.0.0",
+  "authentication": {
+    "schemes": [
+      "OAuth2"
+    ]
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "build_inspecting",
+      "name": "Inspect Manifests",
+      "description": "Identify language, build system, and dependencies from project manifests.",
+      "tags": [
+        "manifests",
+        "dependencies",
+        "toolchain"
+      ],
+      "examples": [
+        "Detect build manifests and required compilers in the repository"
+      ]
+    },
+    {
+      "id": "build_crafting",
+      "name": "Craft Build Script",
+      "description": "Generate outputs/build/build.sh with debug symbols and sanitizers when supported.",
+      "tags": [
+        "build-script",
+        "sanitizers",
+        "automation"
+      ],
+      "examples": [
+        "Write build.sh enabling ASan/UBSan for C/C++ or setting up managed runtimes"
+      ]
+    },
+    {
+      "id": "build_executing",
+      "name": "Execute & Smoke Test",
+      "description": "Run build.sh, fix missing packages, smoke-test target, and write outputs/build/status.json.",
+      "tags": [
+        "execution",
+        "smoke-test",
+        "sandbox"
+      ],
+      "examples": [
+        "Compile target in sandbox and verify readiness in status.json"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "name": "Vuln Analyzer",
+  "description": "Audits taint slices with code evidence, classifies CWEs, and formulates hypotheses.",
+  "url": "https://localhost",
+  "provider": {
+    "organization": "Vulnalysis",
+    "url": "https://github.com/Hugnd-UIT/Vulnalysis"
+  },
+  "version": "1.0.0",
+  "authentication": {
+    "schemes": [
+      "OAuth2"
+    ]
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "analyze_auditing",
+      "name": "Audit Flow Slice",
+      "description": "Inspect guards, sanitizers, and bounds along slices and cite concrete file:line evidence.",
+      "tags": [
+        "code-audit",
+        "cwe",
+        "evidence"
+      ],
+      "examples": [
+        "Audit source-to-sink slice for logic or technical flaws with code citations"
+      ]
+    },
+    {
+      "id": "analyze_synthesizing",
+      "name": "Synthesize Hypothesis",
+      "description": "Produce structured vulnerability hypotheses with preconditions, triggers, and oracles.",
+      "tags": [
+        "hypothesis",
+        "oracle",
+        "preconditions"
+      ],
+      "examples": [
+        "Formulate verifiable hypothesis JSON for downstream PoV testing"
+      ]
+    },
+    {
+      "id": "analyze_debating",
+      "name": "Defend Findings",
+      "description": "Defend candidate hypotheses against debator challenges using line-level code proof.",
+      "tags": [
+        "debate",
+        "defense",
+        "triage"
+      ],
+      "examples": [
+        "Answer debator challenges with concrete bypass proof or concede benign"
+      ]
+    }
+  ]
+}

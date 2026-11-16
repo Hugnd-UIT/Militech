@@ -56,9 +56,11 @@ class VulnAnalyzerAgent(BaseAgent):
                 if content:
                     extracted = self.extract_json(content)
             if extracted and isinstance(extracted, dict):
-                self.log_action("finish")
-                self.log(thought=thought, action="finish", observation="Analysis completed")
-                return True, extracted
+                ev = extracted.get("evidence")
+                if isinstance(ev, list) and len(ev) > 0:
+                    self.log_action("finish")
+                    self.log(thought=thought, action="finish", observation="Analysis completed")
+                    return True, extracted
             return False, None
 
         return self.loop(finish=finish, default=False)

@@ -12,30 +12,52 @@ Model đánh giá: Gemini 3 flash
 
 So sánh với VulnGym:
 
-* **Xét theo critical operation file recall (72.25%):**
-  * Hơn **44.5%** so với CodeQL (50.0%)
-  * Hơn **31.4%** so với GPT-4o (55.0%)
-  * Hơn **24.6%** so với Claude 3.5 Sonnet (58.0%)
+### Mức easy trace <= 7
 
-* **Xét theo entry point file recall (60.99%):**
-  * Hơn **45.2%** so với CodeQL (42.0%)
-  * Hơn **22.0%** so với GPT-4o (50.0%)
-  * Hơn **15.1%** so với Claude 3.5 Sonnet (53.0%)
+* **Xét theo critical operation file recall (71.38%)**
+* **Xét theo entry point file recall (66.54%)**
+* **Xét theo critical operation line recall (19.70%)**
+* **Xét theo entry point line recall (19.70%)**
+* **Xét theo exact recall (7.84%):**
+  * Hơn **3.52%** so với Claude Code + Qwen3.5-9B (4.32%)
 
-* **Xét theo critical operation line recall (17.54%):**
-  * Hơn **46.2%** so với CodeQL (12.0%)
-  * Hơn **6.3%** so với GPT-4o (16.5%)
-  * Kém **20.3%** so với Claude 3.5 Sonnet (22.0%)
+### Mức medium trace = 8
 
-* **Xét theo entry point line recall (15.45%):**
-  * Hơn **47.1%** so với CodeQL (10.5%)
-  * Hơn **4.4%** so với GPT-4o (14.8%)
-  * Kém **20.8%** so với Claude 3.5 Sonnet (19.5%)
+* **Xét theo critical operation file recall (85.71%)**
+* **Xét theo entry point file recall (42.86%)**
+* **Xét theo critical operation line recall (14.29%)**
+* **Xét theo entry point line recall (0.00%)**
+* **Xét theo exact recall (0.00%):**
+  * Ngang Claude Code + Qwen3.5-2B / 4B (0.00%)
+  * Kém **1.79%** so với Claude Code + Qwen3.5-9B (1.79%)
 
-* **Xét theo exact recall (6.54%):**
-  * Hơn **104.4%** so với CodeQL (3.2%)
-  * Kém **3.8%** so với GPT-4o (6.8%)
-  * Kém **37.1%** so với Claude 3.5 Sonnet (10.4%)
+### Mức hard trace >= 9
+
+* **Xét theo critical operation file recall (63.16%):**
+  * Hơn **12.00%** so với MiniSWE + DeepSeek-V4-Flash (51.16%)
+  * Hơn **14.32%** so với Claude Code + GLM-5.2 (48.84%)
+  * Hơn **16.65%** so với OpenHands + MiniMax-M3 (46.51%)
+
+* **Xét theo entry point file recall (57.89%):**
+  * Hơn **27.66%** so với MiniSWE + GLM-5.2 (30.23%)
+  * Hơn **32.31%** so với Claude Code + GLM-5.2 (25.58%)
+  * Hơn **34.63%** so với OpenHands + MiniMax-M3 (23.26%)
+
+* **Xét theo critical operation line recall (21.05%):**
+  * Hơn **4.77%** so với MiniSWE + DeepSeek-V4-Flash (16.28%)
+  * Kém **2.21%** so với OpenHands + MiniMax-M3 (23.26%)
+  * Kém **9.18%** so với Claude Code + GLM-5.2 (30.23%)
+
+* **Xét theo entry point line recall (15.79%):**
+  * Hơn **11.14%** so với Claude Code + DeepSeek-V4-Flash (4.65%)
+  * Kém **0.49%** so với OpenHands + MiniMax-M3 (16.28%)
+  * Kém **2.81%** so với MiniSWE + GLM-5.2 (18.60%)
+
+* **Xét theo exact recall (0.00%):**
+  * Ngang Claude Code + Qwen3.5-9B (0.00%)
+  * Kém **6.52%** so với Claude Code + DeepSeek-V4-Flash (6.52%)
+  * Kém **10.87%** so với MiniSWE + GLM-5.2 (10.87%)
+  * Kém **15.22%** so với OpenHands + DeepSeek-V4-Flash (15.22%)
 
 Thời gian hoàn thành: 8 giờ 50 phút
 
@@ -49,11 +71,11 @@ Thời gian hoàn thành: 8 giờ 50 phút
 
 <svg viewBox="0 0 760 320" width="100%" xmlns="http://www.w3.org/2000/svg" style="background:#0f172a; border-radius:8px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; margin: 10px 0;">
   <!-- Title & Legend -->
-  <text x="380" y="28" text-anchor="middle" fill="#f8fafc" font-size="15" font-weight="bold">Biểu đồ trực quan so sánh với VulnGym</text>
-  <rect x="235" y="42" width="14" height="14" fill="#3b82f6" rx="3"/>
-  <text x="255" y="54" fill="#93c5fd" font-size="12" font-weight="bold">NCKH</text>
-  <rect x="420" y="42" width="14" height="14" fill="#f97316" rx="3"/>
-  <text x="440" y="54" fill="#fdba74" font-size="12" font-weight="bold">VulnGym</text>
+  <text x="380" y="28" text-anchor="middle" fill="#f8fafc" font-size="15" font-weight="bold">Mức Easy (trace ≤ 7): NCKH vs VulnGym</text>
+  <rect x="195" y="42" width="14" height="14" fill="#3b82f6" rx="3"/>
+  <text x="215" y="54" fill="#93c5fd" font-size="12" font-weight="bold">NCKH</text>
+  <rect x="300" y="42" width="14" height="14" fill="#f97316" rx="3"/>
+  <text x="320" y="54" fill="#fdba74" font-size="12" font-weight="bold">VulnGym</text>
 
   <!-- Grid lines -->
   <line x1="80" y1="75" x2="720" y2="75" stroke="#334155" stroke-dasharray="4"/>
@@ -67,40 +89,142 @@ Thời gian hoàn thành: 8 giờ 50 phút
   <line x1="80" y1="255" x2="720" y2="255" stroke="#64748b" stroke-width="1.5"/>
   <text x="70" y="259" text-anchor="end" fill="#94a3b8" font-size="11">0%</text>
 
-  <!-- Group 1: CO File (72.25% vs 58.00%) -->
-  <rect x="115" y="125" width="36" height="130" fill="#3b82f6" rx="4"/>
-  <text x="133" y="117" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">72.3%</text>
-  <rect x="157" y="151" width="36" height="104" fill="#f97316" rx="4"/>
-  <text x="175" y="143" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">58.0%</text>
-  <text x="154" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">CO File</text>
+  <!-- CO File: 71.38% (no comparison) -->
+  <rect x="126" y="127" width="36" height="128" fill="#3b82f6" rx="4"/>
+  <text x="144" y="119" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">71.4%</text>
+  <text x="144" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">CO File</text>
 
-  <!-- Group 2: EP File (60.99% vs 53.00%) -->
-  <rect x="240" y="145" width="36" height="110" fill="#3b82f6" rx="4"/>
-  <text x="258" y="137" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">61.0%</text>
-  <rect x="282" y="160" width="36" height="95" fill="#f97316" rx="4"/>
-  <text x="300" y="152" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">53.0%</text>
-  <text x="279" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">EP File</text>
+  <!-- EP File: 66.54% (no comparison) -->
+  <rect x="254" y="135" width="36" height="120" fill="#3b82f6" rx="4"/>
+  <text x="272" y="127" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">66.5%</text>
+  <text x="272" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">EP File</text>
 
-  <!-- Group 3: CO Line (17.54% vs 22.00%) -->
-  <rect x="365" y="223" width="36" height="32" fill="#3b82f6" rx="4"/>
-  <text x="383" y="215" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">17.5%</text>
-  <rect x="407" y="215" width="36" height="40" fill="#f97316" rx="4"/>
-  <text x="425" y="207" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">22.0%</text>
-  <text x="404" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">CO Line</text>
+  <!-- CO Line: 19.70% (no comparison) -->
+  <rect x="382" y="220" width="36" height="35" fill="#3b82f6" rx="4"/>
+  <text x="400" y="212" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">19.7%</text>
+  <text x="400" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">CO Line</text>
 
-  <!-- Group 4: EP Line (15.45% vs 19.50%) -->
-  <rect x="490" y="227" width="36" height="28" fill="#3b82f6" rx="4"/>
-  <text x="508" y="219" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">15.5%</text>
-  <rect x="532" y="220" width="36" height="35" fill="#f97316" rx="4"/>
-  <text x="550" y="212" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">19.5%</text>
-  <text x="529" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">EP Line</text>
+  <!-- EP Line: 19.70% (no comparison) -->
+  <rect x="510" y="220" width="36" height="35" fill="#3b82f6" rx="4"/>
+  <text x="528" y="212" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">19.7%</text>
+  <text x="528" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">EP Line</text>
 
-  <!-- Group 5: Exact Recall (6.54% vs 10.40%) -->
-  <rect x="615" y="243" width="36" height="12" fill="#3b82f6" rx="4"/>
-  <text x="633" y="235" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">6.5%</text>
-  <rect x="657" y="236" width="36" height="19" fill="#f97316" rx="4"/>
-  <text x="675" y="228" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">10.4%</text>
-  <text x="654" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">Exact Recall</text>
+  <!-- Exact Recall: 7.84% vs 4.32% -->
+  <rect x="617" y="241" width="36" height="14" fill="#3b82f6" rx="4"/>
+  <text x="635" y="233" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">7.8%</text>
+  <rect x="659" y="247" width="36" height="8" fill="#f97316" rx="4"/>
+  <text x="677" y="239" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">4.3%</text>
+  <text x="656" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">Exact Recall</text>
+
+  <text x="380" y="303" text-anchor="middle" fill="#94a3b8" font-size="9.5">*CO/EP chưa có số liệu VulnGym cho mức Easy nên cột NCKH đứng độc lập; Exact Recall lấy toàn bộ 319 ca Easy.</text>
+</svg>
+
+<svg viewBox="0 0 760 320" width="100%" xmlns="http://www.w3.org/2000/svg" style="background:#0f172a; border-radius:8px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; margin: 10px 0;">
+  <!-- Title & Legend -->
+  <text x="380" y="28" text-anchor="middle" fill="#f8fafc" font-size="15" font-weight="bold">Mức Medium (trace = 8): NCKH vs VulnGym</text>
+  <rect x="195" y="42" width="14" height="14" fill="#3b82f6" rx="3"/>
+  <text x="215" y="54" fill="#93c5fd" font-size="12" font-weight="bold">NCKH</text>
+  <rect x="300" y="42" width="14" height="14" fill="#f97316" rx="3"/>
+  <text x="320" y="54" fill="#fdba74" font-size="12" font-weight="bold">VulnGym</text>
+
+  <!-- Grid lines -->
+  <line x1="80" y1="75" x2="720" y2="75" stroke="#334155" stroke-dasharray="4"/>
+  <text x="70" y="79" text-anchor="end" fill="#94a3b8" font-size="11">100%</text>
+  <line x1="80" y1="120" x2="720" y2="120" stroke="#334155" stroke-dasharray="4"/>
+  <text x="70" y="124" text-anchor="end" fill="#94a3b8" font-size="11">75%</text>
+  <line x1="80" y1="165" x2="720" y2="165" stroke="#334155" stroke-dasharray="4"/>
+  <text x="70" y="169" text-anchor="end" fill="#94a3b8" font-size="11">50%</text>
+  <line x1="80" y1="210" x2="720" y2="210" stroke="#334155" stroke-dasharray="4"/>
+  <text x="70" y="214" text-anchor="end" fill="#94a3b8" font-size="11">25%</text>
+  <line x1="80" y1="255" x2="720" y2="255" stroke="#64748b" stroke-width="1.5"/>
+  <text x="70" y="259" text-anchor="end" fill="#94a3b8" font-size="11">0%</text>
+
+  <!-- CO File: 85.71% (no comparison) -->
+  <rect x="126" y="101" width="36" height="154" fill="#3b82f6" rx="4"/>
+  <text x="144" y="93" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">85.7%</text>
+  <text x="144" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">CO File</text>
+
+  <!-- EP File: 42.86% (no comparison) -->
+  <rect x="254" y="178" width="36" height="77" fill="#3b82f6" rx="4"/>
+  <text x="272" y="170" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">42.9%</text>
+  <text x="272" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">EP File</text>
+
+  <!-- CO Line: 14.29% (no comparison) -->
+  <rect x="382" y="229" width="36" height="26" fill="#3b82f6" rx="4"/>
+  <text x="400" y="221" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">14.3%</text>
+  <text x="400" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">CO Line</text>
+
+  <!-- EP Line: 0.00% (no comparison) -->
+  <rect x="510" y="253" width="36" height="2" fill="#3b82f6" rx="1"/>
+  <text x="528" y="245" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">0.0%</text>
+  <text x="528" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">EP Line</text>
+
+  <!-- Exact Recall: 0.00% vs 1.79% -->
+  <rect x="617" y="253" width="36" height="2" fill="#3b82f6" rx="1"/>
+  <text x="635" y="245" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">0.0%</text>
+  <rect x="659" y="252" width="36" height="3" fill="#f97316" rx="4"/>
+  <text x="677" y="244" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">1.8%</text>
+  <text x="656" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">Exact Recall</text>
+
+  <text x="380" y="303" text-anchor="middle" fill="#94a3b8" font-size="9.5">*CO/EP chưa có số liệu VulnGym cho mức Medium nên cột NCKH đứng độc lập; Exact Recall: NCKH 0.00% vs Qwen3.5-9B 1.79%.</text>
+</svg>
+
+<svg viewBox="0 0 760 320" width="100%" xmlns="http://www.w3.org/2000/svg" style="background:#0f172a; border-radius:8px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; margin: 10px 0;">
+  <!-- Title & Legend -->
+  <text x="380" y="28" text-anchor="middle" fill="#f8fafc" font-size="15" font-weight="bold">Mức Hard (trace ≥ 9): NCKH vs VulnGym Best</text>
+  <rect x="205" y="42" width="14" height="14" fill="#3b82f6" rx="3"/>
+  <text x="225" y="54" fill="#93c5fd" font-size="12" font-weight="bold">NCKH</text>
+  <rect x="310" y="42" width="14" height="14" fill="#f97316" rx="3"/>
+  <text x="330" y="54" fill="#fdba74" font-size="12" font-weight="bold">VulnGym</text>
+
+  <!-- Grid lines -->
+  <line x1="80" y1="75" x2="720" y2="75" stroke="#334155" stroke-dasharray="4"/>
+  <text x="70" y="79" text-anchor="end" fill="#94a3b8" font-size="11">100%</text>
+  <line x1="80" y1="120" x2="720" y2="120" stroke="#334155" stroke-dasharray="4"/>
+  <text x="70" y="124" text-anchor="end" fill="#94a3b8" font-size="11">75%</text>
+  <line x1="80" y1="165" x2="720" y2="165" stroke="#334155" stroke-dasharray="4"/>
+  <text x="70" y="169" text-anchor="end" fill="#94a3b8" font-size="11">50%</text>
+  <line x1="80" y1="210" x2="720" y2="210" stroke="#334155" stroke-dasharray="4"/>
+  <text x="70" y="214" text-anchor="end" fill="#94a3b8" font-size="11">25%</text>
+  <line x1="80" y1="255" x2="720" y2="255" stroke="#64748b" stroke-width="1.5"/>
+  <text x="70" y="259" text-anchor="end" fill="#94a3b8" font-size="11">0%</text>
+
+  <!-- CO File: 63.16% vs 51.16% -->
+  <rect x="105" y="141" width="36" height="114" fill="#3b82f6" rx="4"/>
+  <text x="123" y="133" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">63.2%</text>
+  <rect x="147" y="163" width="36" height="92" fill="#f97316" rx="4"/>
+  <text x="165" y="155" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">51.2%</text>
+  <text x="144" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">CO File</text>
+
+  <!-- EP File: 57.89% vs 30.23% -->
+  <rect x="233" y="151" width="36" height="104" fill="#3b82f6" rx="4"/>
+  <text x="251" y="143" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">57.9%</text>
+  <rect x="275" y="201" width="36" height="54" fill="#f97316" rx="4"/>
+  <text x="293" y="193" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">30.2%</text>
+  <text x="272" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">EP File</text>
+
+  <!-- CO Line: 21.05% vs 30.23% -->
+  <rect x="361" y="217" width="36" height="38" fill="#3b82f6" rx="4"/>
+  <text x="379" y="209" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">21.1%</text>
+  <rect x="403" y="201" width="36" height="54" fill="#f97316" rx="4"/>
+  <text x="421" y="193" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">30.2%</text>
+  <text x="400" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">CO Line</text>
+
+  <!-- EP Line: 15.79% vs 18.60% -->
+  <rect x="489" y="227" width="36" height="28" fill="#3b82f6" rx="4"/>
+  <text x="507" y="219" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">15.8%</text>
+  <rect x="531" y="222" width="36" height="33" fill="#f97316" rx="4"/>
+  <text x="549" y="214" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">18.6%</text>
+  <text x="528" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">EP Line</text>
+
+  <!-- Exact Recall: 0.00% vs 15.22% -->
+  <rect x="617" y="253" width="36" height="2" fill="#3b82f6" rx="1"/>
+  <text x="635" y="245" text-anchor="middle" fill="#93c5fd" font-size="11" font-weight="bold">0.0%</text>
+  <rect x="659" y="228" width="36" height="27" fill="#f97316" rx="4"/>
+  <text x="677" y="220" text-anchor="middle" fill="#fdba74" font-size="11" font-weight="bold">15.2%</text>
+  <text x="656" y="275" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">Exact Recall</text>
+
+  <text x="380" y="303" text-anchor="middle" fill="#94a3b8" font-size="9.5">*VulnGym Best: MiniSWE+DS-V4-Flash (CO_FR 51.2%), MiniSWE+GLM-5.2 (EP_FR 30.2%, EP_LR 18.6%), CC+GLM-5.2 (CO_LR 30.2%), OH+DS-V4-Flash (ER 15.2%).</text>
 </svg>
 
 </div>

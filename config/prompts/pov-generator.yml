@@ -66,7 +66,7 @@ agent:
 
     ```json
     {
-      "pov": "python3 /outputs/flow-1/scripts.py",
+      "pov": "python3 /outputs/pov/pov_001/script_001.py",
       "res": {
         "exit_code": 0,
         "output": "<observed_execution_output>",

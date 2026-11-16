@@ -1,6 +1,12 @@
 import json
+import re
 from agents.base import BaseAgent
 from models.provider import OpenAI
+
+
+def _num_suffix(flow_id):
+    m = re.search(r"(\d+)$", str(flow_id or ""))
+    return f"{int(m.group(1)):03d}" if m else str(flow_id or "001")
 
 
 class PovVerifierAgent(BaseAgent):
@@ -20,9 +26,10 @@ class PovVerifierAgent(BaseAgent):
         pov_script=None, 
         pov_result=None
     ):
-        flow_id = hypothesis.get("id")
-        pov_script = pov_script or f"/outputs/{flow_id}/scripts.py"
-        default_result_path = f"/outputs/{flow_id}/results.json"
+        flow_id = hypothesis.get("id") or hypothesis.get("flow_id") or "flow_001"
+        num = _num_suffix(flow_id)
+        pov_script = pov_script or f"/outputs/pov/pov_{num}/script_{num}.py"
+        default_result_path = f"/outputs/pov/pov_{num}/result_{num}.json"
         if pov_result is None:
             pov_result = default_result_path
         pov_str = json.dumps(pov_result, indent=2, ensure_ascii=False) if isinstance(pov_result, (dict, list)) else str(pov_result or "")

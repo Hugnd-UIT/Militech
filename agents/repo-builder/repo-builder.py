@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from agents.base import BaseAgent
 from models.provider import OpenAI
@@ -38,7 +39,7 @@ class RepoBuilderAgent(BaseAgent):
                     found.append(item.name)
         return sorted(found)
 
-    def run(self, repo_path):
+    def run(self, repo_path, build_script="/outputs/build/build.sh", status_file="/outputs/build/status.json", task_hint=None):
         # Reset memory
         self.memory.clear()
         self.step = 0
@@ -51,7 +52,11 @@ class RepoBuilderAgent(BaseAgent):
             self.user_prompt,
             repo=str(repo_path),
             manifests=", ".join(manifests) if manifests else "none detected",
+            build_script=str(build_script),
+            status_file=str(status_file),
         )
+        if task_hint:
+            initial_task += f"\n\n## Coordinator Note\n{task_hint}\n"
 
         self.messages = [
             {"role": "system", "content": self.system_prompt},
@@ -60,7 +65,14 @@ class RepoBuilderAgent(BaseAgent):
 
         def finish(thought, reply):
             extracted = self.extract_json(reply)
+            if not extracted and status_file:
+                _, raw = self.execute(f"cat {status_file} 2>/dev/null")
+                if raw:
+                    extracted = self.extract_json(raw)
             if extracted and isinstance(extracted, dict):
+                if self.sandbox and status_file:
+                    payload = json.dumps(extracted, indent=2, ensure_ascii=False)
+                    self.execute(f"mkdir -p $(dirname {status_file}) && cat << 'EOF' > {status_file}\n{payload}\nEOF")
                 self.log_action("finish")
                 self.log(thought=thought, action="finish", observation="Repo builder completed")
                 return True, extracted

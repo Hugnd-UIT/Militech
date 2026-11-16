@@ -1,6 +1,12 @@
 import json
+import re
 from agents.base import BaseAgent
 from models.provider import OpenAI
+
+
+def _num_suffix(flow_id):
+    m = re.search(r"(\d+)$", str(flow_id or ""))
+    return f"{int(m.group(1)):03d}" if m else str(flow_id or "001")
 
 
 class PovGeneratorAgent(BaseAgent):
@@ -20,11 +26,13 @@ class PovGeneratorAgent(BaseAgent):
         pov_script=None, 
         pov_result=None, 
         feedback=None,
-        harness=None
+        harness=None,
+        build_status=None,
     ):
-        flow_id = hypothesis.get("id")
-        pov_script = pov_script or f"/outputs/{flow_id}/scripts.py"
-        pov_result = pov_result or f"/outputs/{flow_id}/results.json"
+        flow_id = hypothesis.get("id") or hypothesis.get("flow_id") or "flow_001"
+        num = _num_suffix(flow_id)
+        pov_script = pov_script or f"/outputs/pov/pov_{num}/script_{num}.py"
+        pov_result = pov_result or f"/outputs/pov/pov_{num}/result_{num}.json"
         feedback_str = json.dumps(feedback, indent=2, ensure_ascii=False) if feedback else ""
 
         self.cleanup_processes()
@@ -54,6 +62,8 @@ class PovGeneratorAgent(BaseAgent):
                 pov_result=pov_result,
                 harness=harness_str,
             )
+            if build_status:
+                initial_task += f"\n\n### Build Metadata\n```json\n{json.dumps(build_status, indent=2, ensure_ascii=False)}\n```\n"
             self.messages = [
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": initial_task},

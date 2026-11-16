@@ -11,11 +11,10 @@ if str(root) not in sys.path:
     sys.path.insert(0, str(root))
 
 import graphify
-from agents import retriever
+from agents import RepoRetrieverAgent
 from src.dedup import filter as dedup
 from utils.logger import setup_logger
 
-RepoRetrieverAgent = retriever.RepoRetrieverAgent
 log = setup_logger()
 
 DELTA = 5

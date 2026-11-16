@@ -10,7 +10,9 @@ agent:
   user-prompt: |
     ## Rules - STRICT
     - Use `bash` to trace source code files along the taint flow slice.
-    - Use `finish` ONLY when candidate hypothesis has been formulated and recorded.
+    - Every finding (`VULNERABLE` or `BENIGN`) MUST cite concrete `evidence` (`file`, `line`, exact code `snippet` observed on disk). Claims without code evidence will be rejected.
+    - Exclude test suites (`tests/`, `test/`), examples (`examples/`), fixtures (`fixtures/`), and docs (`docs/`). Focus strictly on production code.
+    - Use `finish` ONLY when candidate hypothesis and code evidence have been formulated and recorded.
     - You MUST strictly adhere to the JSON schema when outputting finish.
 
     ## Context
@@ -38,7 +40,7 @@ agent:
        - Technical vulnerabilities: inspect data transformations, sanitization, encoding, bounds checks, and API parameters to verify if untrusted input unsafely reaches a dangerous sink.
     3. Determine the vulnerability root cause and classify the weakness under the appropriate CWE identifier.
     4. Synthesize the finding into a structured hypothesis with preconditions, trigger format, expected behavior, and verification oracle.
-    5. If Coordinator returns feedback (`REVISE` or `REJECT`), investigate the challenged code path: formulate counter-arguments with code citations in `defense` and maintain `verdict: "VULNERABLE"`, or if the code is proven safe, set `verdict: "BENIGN"` and articulate the defense rationale.
+    5. If Debator or Coordinator returns a challenge/feedback, investigate the challenged code lines on disk: formulate counter-arguments with concrete code citations in `defense` + `evidence` and maintain `verdict: "VULNERABLE"`, OR if code is proven safe, concede `verdict: "BENIGN"` with the guard `evidence`.
     6. Output `finish` containing the structured hypothesis JSON adhering to schema.
 
     ## Scope - STRICT
@@ -88,6 +90,14 @@ agent:
         "target": "<string: sink function, endpoint, or file>",
         "command": "<string: command template with placeholders>"
       },
+      "evidence": [
+        {
+          "file": "<string: file path>",
+          "line": "<integer: exact line number>",
+          "snippet": "<string: exact code line observed on disk>"
+        }
+      ],
+      "missing_links": "<boolean: true if trace has broken indirect/pointer call requiring retriever stitching>",
       "remediation": "<string: fix recommendation>"
     }
     ```
@@ -133,9 +143,9 @@ agent:
     {%- endif -%}
 
   error-prompt: |
-    Invalid action format. Every response MUST include BOTH
+    Invalid action format or missing required `evidence` array. Every response MUST include BOTH
     1. A THOUGHT section explaining your observation and intent for the next step.
-    2. Exactly ONE action - either a `bash` code block like ```bash ... ``` or `finish`.
+    2. Exactly ONE action - either a `bash` code block like ```bash ... ``` or `finish` with valid JSON containing non-empty `evidence` (`file`, `line`, `snippet`).
 
   exceeded-prompt: |
     You have only {{remaining}} rounds left out of {{total}}. 

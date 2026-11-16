@@ -11,9 +11,10 @@ agent:
     ## Rules - STRICT
     - Use `bash` to trace untrusted entry points and candidate flows to critical operations.
     - Verify all source code and line numbers directly on disk; NEVER guess or invent line numbers.
-    - For entry points, obtain exact definition line numbers using `grep -n "def <func>" <file>`.
+    - For entry points, obtain exact definition line numbers directly from source files on disk using `grep -n` or line inspection.
+    - For indirect calls (function pointers, struct operation tables, callbacks, virtual methods, or interface dispatches), inspect assignments/registrations on disk to stitch the full call chain from entry point to sink.
     - For critical operations and sinks, locate exact call site line numbers directly in source code.
-    - Real security analysis targets production code (`src/`); automatically ignore tests (`tests/`, `test/`), fixtures, and examples.
+    - Real security analysis targets production code; automatically ignore tests (`tests/`, `test/`), fixtures, examples (`examples/`), and docs (`docs/`).
     - Sinks MUST be genuine security-critical operations (credential/token generation or signing, access/authorization decisions, privilege boundaries, or sensitive technical sinks).
     - For modules defining security authority or access control, trace all primary entry points (initializers configuring authority, request/protocol handlers, exchange endpoints) reaching the module's core security operations.
     - Treat temporary nonce generation and state/session storage as intermediate transforms; bridge flows directly to the primary security operations.
@@ -35,7 +36,7 @@ agent:
     ## Workflow
     1. Read top candidate flows from {{call_flows}} with their call site lines:
        `python3 -c "import json; [print(f.get('dst',{}).get('line'), f.get('paths',[[None]])[0][0], f.get('src',{}).get('func')) for f in [json.loads(l) for l in open('{{call_flows}}')]]"`
-    2. Inspect {{target}} source code with `grep -n "def <func>"` to get exact entry point lines.
+    2. Inspect `{{target}}` and caller files on disk to verify entry point definition lines and resolve any indirect calls, callbacks, or function pointers.
     3. Verify candidate flows reaching critical operations across both logic and technical vulnerability categories.
     4. Save identified flows to {{taint_flows}} and call `finish` with the complete JSON array.
 

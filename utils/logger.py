@@ -8,6 +8,7 @@ if os.name == "nt":
 AGENT_COLORS = {
     "coordinator": "\033[1;34m",       # Bold Blue
     "vuln-analyzer": "\033[1;36m",     # Bold Cyan
+    "vuln-debator": "\033[38;5;208m",  # Orange
     "pov-generator": "\033[1;35m",     # Bold Magenta
     "pov-verifier": "\033[1;32m",      # Bold Green
     "repo-builder": "\033[1;33m",      # Bold Yellow
@@ -78,7 +79,7 @@ def http_filter(record):
     return "HTTP Request:" not in record.getMessage()
 
 
-def setup_logger():
+def setup_logger(log_file=None):
     for lib in ["httpx", "httpx2", "httpcore", "httpcore2", "openai", "urllib3"]:
         logging.getLogger(lib).setLevel(logging.WARNING)
 
@@ -95,6 +96,21 @@ def setup_logger():
     handler.setFormatter(formatter)
     handler.addFilter(http_filter)
     root.addHandler(handler)
+
+    if log_file:
+        from pathlib import Path
+        import re
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+        file_formatter = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%H:%M:%S")
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.addFilter(http_filter)
+
+        orig_format = file_formatter.format
+        file_formatter.format = lambda rec: ansi_re.sub("", orig_format(rec)).lstrip("\r\n")
+        file_handler.setFormatter(file_formatter)
+        root.addHandler(file_handler)
 
     logger = logging.getLogger("vulnalysis")
     logger.setLevel(logging.INFO)

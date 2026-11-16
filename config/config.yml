@@ -13,6 +13,11 @@ agents:
     input-rate: 3.0
     output-rate: 15.0
 
+  vuln-debator:
+    model: ag/claude-sonnet-4-6
+    input-rate: 3.0
+    output-rate: 15.0
+
   pov-generator:
     model: ag/claude-sonnet-4-6
     input-rate: 3.0
