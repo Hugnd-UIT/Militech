@@ -1,34 +1,34 @@
 provider:
   url: http://127.0.0.1:20128/v1
-  key: sk-7412ef646295bcc4-8xzjam-751992f4
+  key: sk-c5d2ee463f2749e0-3dvvzb-1f528f95
 
 agents:
   coordinator:
-    model: ag/claude-sonnet-4-6
-    input-rate: 3.0
-    output-rate: 15.0
+    model: ag/gemini-3-flash
+    input-rate: 0.15
+    output-rate: 0.60
 
   vuln-analyzer:
-    model: ag/claude-sonnet-4-6
-    input-rate: 3.0
-    output-rate: 15.0
+    model: ag/gemini-3-flash
+    input-rate: 0.15
+    output-rate: 0.60
 
   pov-generator:
-    model: ag/claude-sonnet-4-6
-    input-rate: 3.0
-    output-rate: 15.0
+    model: ag/gemini-3-flash
+    input-rate: 0.15
+    output-rate: 0.60
 
   pov-verifier:
-    model: ag/claude-sonnet-4-6
-    input-rate: 3.0
-    output-rate: 15.0
+    model: ag/gemini-3-flash
+    input-rate: 0.15
+    output-rate: 0.60
 
   repo-builder:
-    model: ag/gemini-3.8-flash-medium
-    input-rate: 0.75
-    output-rate: 3.75
+    model: ag/gemini-3-flash
+    input-rate: 0.15
+    output-rate: 0.60
 
   repo-retriever:
     model: ag/gemini-3-flash
-    input-rate: 0.75
-    output-rate: 3.75
+    input-rate: 0.15
+    output-rate: 0.60

@@ -10,7 +10,7 @@ log = logging.getLogger("provider")
 POLICY_BLOCK_PREFIX = "[!] Blocked by safety policy"
 
 
-def retry(call_fn, agent_name="", max_retries=8, base_delay=4.0):
+def retry(call_fn, agent_name="", max_retries=6, base_delay=2.0):
     for attempt in range(max_retries):
         try:
             return call_fn()
@@ -37,7 +37,7 @@ def retry(call_fn, agent_name="", max_retries=8, base_delay=4.0):
                 log.error(f"[{agent_name or 'provider'}] LLM call failed after {max_retries} attempts: status={status_code} error={e}")
                 raise e
 
-            delay = min(60.0, base_delay * (2 ** min(attempt, 4)))
+            delay = min(30.0, base_delay * (2 ** min(attempt, 3)))
             status_str = f" [HTTP {status_code}]" if status_code else ""
             log.warning(
                 f"[{agent_name or 'provider'}] LLM call error{status_str} ({err_name}: {err_msg[:120]}). "
@@ -83,7 +83,7 @@ class OpenAI:
             self.model = ""
 
         # Initialize client
-        self.client = _OpenAIClient(api_key=self.key or "none", base_url=self.url, timeout=180.0)
+        self.client = _OpenAIClient(api_key=self.key or "none", base_url=self.url, timeout=30.0, max_retries=0)
 
 
     def chat(self, messages, **kwargs):

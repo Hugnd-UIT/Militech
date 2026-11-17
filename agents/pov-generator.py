@@ -33,18 +33,38 @@ class PovGeneratorAgent(BaseAgent):
         if self.messages and feedback:
             self.step = 0
             self.cmd_history = []
-            obs = self.render(
-                self.react_prompt,
-                verifier=feedback_str,
-                code=0,
-                output="",
+            curr_script = ""
+            if self.sandbox:
+                _, curr_script = self.execute(f"cat {pov_script} 2>/dev/null")
+            
+            feedback_note = (
+                f"Verifier Feedback from previous round:\n```json\n{feedback_str}\n```\n\n"
+                f"Current script at {pov_script}:\n```python\n{curr_script.strip()}\n```\n\n"
+                f"Please refine the script at {pov_script} based on the verifier feedback (e.g. fix environment, python paths, or input boundaries), re-execute it inside the sandbox, and output finish."
             )
-            self.messages.append({"role": "user", "content": obs})
+            task_msg = self.messages[1]["content"] if len(self.messages) > 1 else ""
+            self.messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": task_msg},
+                {"role": "assistant", "content": f"THOUGHT: In the previous round, I created {pov_script}."},
+                {"role": "user", "content": feedback_note},
+            ]
         else:
             self.memory.clear()
             self.step = 0
             self.cmd_history = []
             hyp_str = json.dumps(hypothesis, indent=2, ensure_ascii=False) if isinstance(hypothesis, (dict, list)) else str(hypothesis or "")
+            if isinstance(harness, dict) and "items" in harness:
+                items = harness.get("items", [])
+                if len(items) > 8:
+                    fuzz_items = [it for it in items if it.get("type") == "fuzz"]
+                    selected = fuzz_items[:8] if fuzz_items else items[:8]
+                    harness = {
+                        "found": True,
+                        "count": len(items),
+                        "items": selected,
+                        "note": f"Showing top {len(selected)} of {len(items)} items"
+                    }
             harness_str = json.dumps(harness, indent=2, ensure_ascii=False) if isinstance(harness, (dict, list)) else str(harness or "{}")
             initial_task = self.render(
                 self.user_prompt,
