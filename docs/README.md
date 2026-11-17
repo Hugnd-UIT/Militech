@@ -1,121 +1,97 @@
-# Architecture Diagram
+# Mathematical & Theoretical Formulation
 
-<p align="center">
-  <img src="architecture-diagram.png" alt="Architecture Diagram" />
-</p>
-
-# Mô tả chi tiết
+Tài liệu này mô hình hóa toàn bộ kiến trúc hệ thống sang ký hiệu toán học, lý thuyết đồ thị, hàm chấm điểm heuristic và máy trạng thái chuyển tiếp để đưa vào **báo cáo NCKH** và gắn trực tiếp lên **sơ đồ kiến trúc (`architecture-diagram`)**.
 
 ---
 
-## 1. Repo Retriever
+## 1. Tóm tắt ký hiệu gắn trực tiếp lên Sơ đồ Kiến trúc
 
-- **Trách nhiệm:** Khảo sát toàn diện kho mã nguồn thông qua Graphify và các công cụ phân tích cấu trúc để xây dựng đồ thị gọi hàm. Tự động truy vết và giải mã các hàm ẩn do con trỏ hàm, macro định nghĩa hoặc liên kết động gây ra nhằm hàn gắn các mắt xích đứt đoạn. Xử lý triệt để việc khử trùng lặp và chặn chu trình đệ quy lặp vô tận, bóc tách các chuỗi Taint Flow hoàn chỉnh và chuyển trực tiếp sang Vuln Analysis.
+Nếu cần vẽ ngắn gọn vào từng khối / mũi tên trên sơ đồ:
 
-- **Input:** Mã nguồn dự án cùng đồ thị gọi hàm từ Repo.
-
-- **Output:** Taint Flow hoàn chỉnh - Transfer taint flow gửi đến Vuln Analysis.
-
-- **Model:** Model nhanh.
-
-- **Tools:** Graphify, Symbol analyzer, Traversal scripts.
-
----
-
-## 2. Repo Builder
-
-- **Trách nhiệm:** Phân tích cấu hình dự án để thiết lập môi trường Docker khép kín, cài đặt các gói phụ thuộc theo từng ngôn ngữ, kích hoạt các công cụ giám sát runtime phù hợp như Sanitizer, Race detector, Debugger hoặc Runtime tracer và tự động xử lý lỗi biên dịch để ứng dụng thực thi được, sau đó bàn giao môi trường hoàn chỉnh cho PoV Generator.
-
-- **Input:** Mã nguồn dự án và tập tin hướng dẫn cấu hình từ Repo.
-
-- **Output:** Môi trường thực thi kèm công cụ giám sát runtime - Build env and runtime bàn giao cho PoV Generator.
-
-- **Model:** Model trung bình.
-
-- **Tools:** Docker execution, Shell script, Build harness.
+| Khối / Giai đoạn trên sơ đồ | Công thức / Ký hiệu ngắn gọn |
+|---|---|
+| **Static Graph (`graphify`)** | $G = (V, E),\quad p = (v_0 \to v_1 \to \dots \to v_k)$ |
+| **Production Filter (`dedup.filter`)** | $G_{\text{prod}} = \{f \in G \mid v_{\text{dst}} \notin V_{\text{non-prod}},\ \text{trim}(p) \neq \emptyset\}$ |
+| **Risk Scoring (`dedup.score`)** | $S(f) = 2 + w_{\text{conf}} + w_{\text{sink}}(op) + w_{\text{ctx}} + w_{\text{len}}(\lvert c \rvert)$ |
+| **Chunk Ranking (`rank_target_files`)** | $F^* = \arg\max_{F_i} \big(\max_{f \in F_i} S(f),\ \sum_{f \in F_i} S(f)\big)$ |
+| **Adversarial Debate ($t \le 3$)** | $(y_t, d_t) \xrightarrow{\delta} \{\text{approved},\ \text{disputed},\ \text{rejected}\}$ |
+| **PoV Execution Oracle ($k \le 3$)** | $\text{Exec}(\pi_k) \in \{\text{SUCCESS}, \text{ERROR}_{\tau}\};\quad \text{Verify}(\pi_k, \mathcal{O}) \in \{\text{CONFIRMED}, \text{UNCONFIRMED}, \text{RETRY}\}$ |
+| **Disputed Promotion** | $\text{disputed} \xrightarrow{\text{CONFIRMED}} \text{approved} \to \text{Report};\quad \text{disputed} \xrightarrow{\text{UNCONFIRMED}} \text{rejected}$ |
 
 ---
 
-## 3. Coordinator
+## 2. Phase 0: Đồ thị gọi hàm & Lọc mã Production (`graphify` + `src/dedup.py`)
 
-- **Trách nhiệm:** Bộ não điều phối cấp cao và quản lý mô hình hiểm họa. Tiếp nhận các giả thuyết ứng viên từ Vuln Analysis để tranh biện, phản biện và xác thực tính hợp lý theo ranh giới tin cậy. Tiếp nhận phán quyết cuối cùng từ PoV Verifier để chốt báo cáo lỗ hổng hoặc điều hướng chiến lược kiểm thử lại khi PoV thất bại.
+### 2.1. Biểu diễn đồ thị
+Mã nguồn mục tiêu được trích xuất thành đồ thị có hướng:
+$$G = (V, E)$$
+trong đó:
+- $V$: tập các hàm / ký hiệu (`nodes`), phân hoạch thành tập production $V_{\text{prod}}$ và tập non-production $V_{\text{non-prod}}$ (`tests/`, `fuzz/`, `mock/`, `fixture/`, `docs/`).
+- $E \subseteq V \times V$: tập cạnh gọi hàm (`calls`).
+- Một call-flow ứng viên là bộ $f = (v_{\text{src}}, v_{\text{dst}}, P)$, với $P = \{p_1, p_2, \dots\}$ là tập chuỗi đường đi $p = (u_0, u_1, \dots, u_m)$.
 
-- **Input:** Candidate hypotheses từ Vuln Analysis, Verdict hypotheses từ PoV Verifier.
-
-- **Output:** Validate hypotheses phản biện lại Vuln Analysis, Báo cáo lỗ hổng thẩm định cuối cùng.
-
-- **Model:** Model mạnh.
-
-- **Tools:** Quản lý trạng thái, Context summarizer.
-
----
-
-## 4. Vuln Analysis
-
-- **Trách nhiệm:** Bộ não phân tích bảo mật ngữ nghĩa chuyên sâu. Đọc sâu mã nguồn các hàm dọc theo chuỗi Taint Flow do Repo Retriever cung cấp, đối chiếu điểm vào dữ liệu và điểm thao tác nhạy cảm, phân tích ngữ nghĩa để xác định nguyên nhân gốc rễ và phân loại CWE. Đề xuất giả thuyết ứng viên lên Coordinator để thẩm định hai chiều, sau đó bàn giao đặc tả mục tiêu khai thác kèm điều kiện kích hoạt sang PoV Generator.
-
-- **Input:** Taint Flow từ Repo Retriever, Validate hypotheses từ Coordinator, mã nguồn chi tiết trong repo.
-
-- **Output:** Candidate hypotheses đề xuất lên Coordinator, Target hypotheses chuyển sang PoV Generator.
-
-- **Model:** Model mạnh.
-
-- **Tools:** Trích xuất mã nguồn, Code viewer, Semantic parser.
+### 2.2. Toán tử cắt tiền tố Non-Production (`_clean_prod_paths`)
+Với mỗi chuỗi $p = (u_0, \dots, u_m)$, định nghĩa chỉ số bước production đầu tiên:
+$$i^* = \min \{ i \in \{0, \dots, m\} \mid u_i \in V_{\text{prod}} \}$$
+Đường đi chuẩn hóa là hậu tố $\text{trim}(p) = (u_{i^*}, \dots, u_m)$ (loại bỏ toàn bộ các bước gọi từ unit test ở đầu chuỗi, giữ tối đa $L = 3$ đường đi ngắn nhất không trùng lặp):
+$$P_{\text{prod}}(f) = \text{Top}_3^{\text{short}}\Big(\{\text{trim}(p) \mid p \in P,\ \text{trim}(p) \subseteq V_{\text{prod}}\}\Big)$$
 
 ---
 
-## 5. PoV Generator
+## 3. Phase 2: Hàm chấm điểm rủi ro & Xếp hạng Chunk (`src/dedup.py`)
 
-- **Trách nhiệm:** Tác tử thực thi kịch bản kiểm thử. Tiếp nhận đặc tả mục tiêu từ Vuln Analysis và môi trường runtime từ Repo Builder để thiết kế dữ liệu đầu vào cùng kịch bản khai thác. Trực tiếp thực thi kịch bản trong môi trường Docker để thu thập kết quả và log chạy thực tế, chuyển toàn bộ sang PoV Verifier, đồng thời tinh chỉnh kịch bản dựa trên phản hồi kỹ thuật từ Verifier.
+### 3.1. Hàm chấm điểm heuristic cho mỗi flow $f$
+Từ chuỗi gọi $c = (v_0, \dots, v_k)$, xác định entry point $ep = v_0$, sink operation $op = v_k$, biến nguồn $var$, tệp đích $file$, và độ tin cậy $\text{conf} \in [0, 1]$. Điểm rủi ro $S(f) \in \mathbb{Z}$ được tính đúng theo hàm `score(flow)`:
+$$S(f) = 2 + 10 \cdot \mathbb{I}[\text{conf} \ge 0.7 \lor \text{prefix}(id) \in \{\texttt{tf}, \texttt{ct}\} \lor \text{verdict} = \text{VULNERABLE}] + w_{\text{sink}}(op) + w_{\text{ctx}}(f) + w_{\text{len}}(\lvert c \rvert)$$
 
-- **Input:** Target hypotheses từ Vuln Analysis, Build env and runtime từ Repo Builder, Feedback từ PoV Verifier.
+Trong đó:
+- **Trọng số theo nhóm sink nguy hiểm $w_{\text{sink}}(op)$:**
+  $$w_{\text{sink}}(op) = w_{\text{primary}}(op) + 7 \cdot \mathbb{I}[op \in \mathcal{O}_{\text{deser}}] + 6 \cdot \mathbb{I}[op \in \mathcal{O}_{\text{file}}] + 5 \cdot \mathbb{I}[op \in \mathcal{O}_{\text{web}}]$$
+  với:
+  $$w_{\text{primary}}(op) = \begin{cases} 10, & \text{nếu } op \in \mathcal{O}_{\text{RCE}} \\ 8, & \text{nếu } (file \in \text{C/C++} \land op \in \mathcal{O}_{\text{fmt}}) \lor op \in \mathcal{O}_{\text{mem}} \\ 0, & \text{ngược lại} \end{cases}$$
 
-- **Output:** Kịch bản kiểm thử kèm kết quả thực thi thực tế - Transfer PoV script and result gửi sang PoV Verifier.
+- **Trọng số ngữ cảnh Logic & Auth $w_{\text{ctx}}(f)$:**
+  $$w_{\text{ctx}}(f) = 3 \cdot \mathbb{I}[(ep, var) \cap \mathcal{K}_{\text{src}} \neq \emptyset] + 4 \cdot \mathbb{I}[file \cap \mathcal{K}_{\text{auth}} \neq \emptyset] + 4 \cdot \mathbb{I}[(op, ep) \cap \mathcal{K}_{\text{logic}} \neq \emptyset] + 3 \cdot \mathbb{I}[(ep, var, op) \cap \mathcal{K}_{\text{param}} \neq \emptyset] + 4 \cdot \mathbb{I}[file \cap \mathcal{K}_{\text{auth}} \neq \emptyset \land (op, ep) \cap \mathcal{K}_{\text{init}} \neq \emptyset]$$
 
-- **Model:** Model mạnh.
+- **Trọng số độ dài chuỗi $w_{\text{len}}(\lvert c \rvert)$:**
+  $$w_{\text{len}}(\lvert c \rvert) = \begin{cases} +2, & 1 \le \lvert c \rvert \le 4 \\ +1, & 5 \le \lvert c \rvert \le 9 \\ -1, & \lvert c \rvert \ge 10 \\ 0, & \lvert c \rvert = 0 \end{cases}$$
 
-- **Tools:** Trình sinh mã, Runtime executor, Python script.
-
----
-
-## 6. PoV Verifier
-
-- **Trách nhiệm:** Thẩm định viên độc lập đóng vai trò phê bình và giám sát. Không trực tiếp chạy lại mã mà phân tích kịch bản kiểm thử đối chiếu với log thực thi và mã lỗi runtime từ PoV Generator để xác minh xem lỗi kích hoạt có thực sự hợp lệ hay chỉ là crash vô hại. Gửi phản hồi kỹ thuật để PoV Generator tinh chỉnh kịch bản hoặc gửi phán quyết thẩm định cuối cùng lên Coordinator.
-
-- **Input:** PoV script and result từ PoV Generator.
-
-- **Output:** Feedback kỹ thuật gửi cho PoV Generator, Verdict hypotheses gửi lên Coordinator.
-
-- **Model:** Model nhanh hoặc trung bình.
-
-- **Tools:** Log parser, Runtime oracle analyzer.
+### 3.2. Xếp hạng ưu tiên theo File Chunk (`rank_target_files`)
+Các flow được gom theo tệp đích $F_i$. Mỗi tệp chưa phân tích được xếp hạng theo bộ khóa từ điển giảm dần (ưu tiên `src/` trước):
+$$\text{Priority}(F_i) = \left( \mathbb{I}[F_i \text{ starts with } \texttt{src/}],\ \max_{f \in F_i} S(f),\ \sum_{f \in F_i} S(f) \right)$$
 
 ---
 
-# Đóng góp
+## 4. Phase 3: Máy trạng thái Tranh biện Đối kháng (`Coordinator` + `Analyzer` $\leftrightarrow$ `Debator`)
+
+Với mỗi taint flow $f$, quá trình phân tích & phản biện chạy tối đa $T_{\max} = 3$ vòng ($t = 1, 2, 3$):
+
+- **Vuln Analyzer ($\mathcal{A}$):** sinh giả thuyết $H_t = (y_t, E_t^{(A)}, \mathcal{O}_t)$ với $y_t \in \{\text{VULNERABLE}, \text{BENIGN}\}$ và tập bằng chứng code $E_t^{(A)} \neq \emptyset$.
+- **Vuln Debator ($\mathcal{D}$):** kiểm chứng độc lập trên đĩa, trả về $D_t = (d_t, E_t^{(D)}, H_t^{(D)})$ với $d_t \in \{\text{ACCEPT}, \text{REJECT}, \text{REVISE}\}$ và $E_t^{(D)} \neq \emptyset$.
+
+Hàm chuyển trạng thái $\delta(y_t, d_t, t)$ kết thúc vào một trong 3 thư mục giả thuyết hoặc sang vòng $t+1$:
+
+$$\delta(y_t, d_t, t) = \begin{cases} \texttt{approved/} & \text{nếu } d_t = \text{ACCEPT} \land y_t = \text{VULNERABLE} \quad (\text{Chủ giả thuyết: } \mathcal{A}) \\ \texttt{rejected/} & \text{nếu } (d_t = \text{ACCEPT} \land y_t = \text{BENIGN}) \lor (t = T_{\max} \land y_t = \text{BENIGN} \land d_t = \text{REVISE}) \\ \texttt{disputed/} & \text{nếu } t = T_{\max} \land y_t = \text{VULNERABLE} \land d_t \in \{\text{REJECT}, \text{REVISE}\} \quad (\text{Chủ giả thuyết: } \mathcal{A}) \\ \texttt{disputed/} & \text{nếu } t = T_{\max} \land y_t = \text{BENIGN} \land d_t = \text{REJECT} \quad (\text{Chủ giả thuyết: } \mathcal{D},\ H_t^{(D)}) \\ \text{Round } (t+1) & \text{nếu } t < T_{\max} \land d_t \in \{\text{REJECT}, \text{REVISE}\} \end{cases}$$
 
 ---
 
-## 1. Đề xuất kiến trúc đa tác tử phân tầng hoàn chỉnh từ phân tích mã nguồn đến thực thi kiểm chứng
+## 5. Phase 4: Kiểm chứng Thực nghiệm theo Oracle (`PoV Generator` $\leftrightarrow$ `PoV Verifier`)
 
-Xây dựng hệ thống phối hợp đa tác tử gồm sáu thành phần chuyên biệt: Repo Retriever, Repo Builder, Coordinator, Vuln Analysis, PoV Generator và PoV Verifier. Kiến trúc phân tách độc lập giữa làn phân tích tĩnh và làn đóng gói môi trường runtime, khắc phục triệt để hiện tượng quá tải ngữ cảnh và cạn kiệt ngân sách tính toán đã được chỉ ra trong các nghiên cứu SEC-bench và IEEE Access.
+Tập ứng viên cần kiểm chứng PoV là hợp của 2 tập:
+$$\mathcal{C}_{\text{PoV}} = \mathcal{H}_{\text{approved}} \cup \mathcal{H}_{\text{disputed}}$$
 
-## 2. Thiết kế lược đồ bằng chứng thống nhất cho toàn bộ chu trình kiểm thử
+Với mỗi $H \in \mathcal{C}_{\text{PoV}}$ mang oracle kỳ vọng $\mathcal{O}$, vòng tinh chỉnh chạy tối đa $K_{\max} = 3$ lần thử ($k = 1, \dots, K_{\max}$):
+1. `PoV Generator` sinh mã khai thác $\pi_k$ và thực thi trong sandbox Linux (ASan/UBSan), trả về trạng thái chạy:
+   $$\text{Exec}(\pi_k) = (\text{status}_k, \tau_k),\quad \text{status}_k \in \{\text{SUCCESS}, \text{ERROR}\},\quad \tau_k \in \{\text{timeout}, \text{syntax}, \text{compile}, \text{missing\_dep}, \text{runtime}, \emptyset\}$$
+2. `PoV Verifier` kiểm tra tính tái lập và đối khớp hai chiều (vị trí `location_match` & cơ chế `mechanism_match`):
+   $$\text{Verify}(\pi_k, \mathcal{O}) = \begin{cases} \text{CONFIRMED}, & \text{nếu } \text{Exec}(\pi_k) \models \mathcal{O} \land \text{Align}(\pi_k, H) \\ \text{RETRY}, & \text{nếu lỗi kịch bản/môi trường } (\text{status}_k = \text{ERROR}) \land k < K_{\max} \\ \text{UNCONFIRMED}, & \text{nếu bất khả thi hoặc } k = K_{\max} \text{ không đạt} \end{cases}$$
 
-Chuẩn hóa lược đồ dữ liệu trung gian có cấu trúc xuyên suốt giữa các tác tử, bao gồm phân loại CWE, vị trí tệp tin và dòng mã nguồn, entry point, critical operation, chuỗi vết source-to-sink trace, precondition kích hoạt, kịch bản PoV và kết quả thực thi runtime. Việc chuẩn hóa này loại bỏ triệt để hiện tượng ảo giác, tạo cầu nối dữ liệu chặt chẽ và nhất quán giữa các khâu suy luận.
+**Toán tử hậu kiểm cho tập tranh chấp (`promote_disputed`):**
+$$\forall H \in \mathcal{H}_{\text{disputed}}:\quad H \mapsto \begin{cases} \texttt{approved/} \to \texttt{report/vuln\_xxx/}, & \text{nếu } \text{Verify}(\pi, \mathcal{O}) = \text{CONFIRMED} \\ \texttt{rejected/}, & \text{nếu } \text{Verify}(\pi, \mathcal{O}) = \text{UNCONFIRMED} \end{cases}$$
 
-## 3. Cơ chế sàng lọc và xếp hạng ứng viên dựa trên khả năng tiếp cận và bằng chứng thực tế
+---
 
-Thiết lập quy trình ưu tiên và sàng lọc giả thuyết dựa trên bốn trụ cột chính:
-- Tính khả thi của đường dẫn thực thi - Reachability analysis qua đồ thị gọi hàm.
-- Bằng chứng phân tích cú pháp và ngữ nghĩa từ Repo Retriever.
-- Mức độ nghiêm trọng của phân loại lỗi - Severity scoring.
-- Khả năng kiểm chứng thực tế trong môi trường sandbox để loại bỏ sớm các cảnh báo giả.
+## 6. Ràng buộc Dừng & Hội tụ (`BaseAgent`)
 
-## 4. Kiểm soát bùng nổ đường đi và chống trôi ngữ cảnh bằng lát cắt Taint Flow
-
-Ứng dụng đồ thị Graphify kết hợp cơ chế khử trùng lặp và chặn chu trình đệ quy lặp vô tận, tự động giải mã con trỏ hàm và liên kết ẩn. Đóng gói mã nguồn thành các lát cắt Taint Flow độc lập gửi trực tiếp cho Vuln Analysis, giúp tác tử phân tích dứt điểm từng lát cắt và làm mới bộ nhớ đệm, triệt tiêu hoàn toàn hiện tượng mất trí nhớ khi xử lý kho mã nguồn quy mô lớn.
-
-## 5. Quy trình đánh giá thực nghiệm toàn diện và kiểm soát rò rỉ dữ liệu
-
-Định hình khung đánh giá thực nghiệm đa chiều bao gồm độ chính xác phát hiện, năng lực định vị dòng lỗi, độ bao phủ chuỗi vết, tỷ lệ thực thi PoV thành công, tỷ lệ cảnh báo giả, thời gian thực thi và chi phí token. Tích hợp nghiên cứu bóc tách từng thành phần - Ablation study và quy trình kiểm định rò rỉ dữ liệu huấn luyện - Data leakage nhằm bảo đảm tính khách quan và độ tin cậy khoa học.
+Mỗi agent $a$ bị chặn bởi ràng buộc ngân sách bước chạy $S_{\max}$, chi phí $C_{\max}$, và phát hiện lặp lệnh vô hạn:
+$$\text{Continue}(a) \iff \big(\text{step}(a) < S_{\max}\big) \land \big(\text{Cost}(a) < C_{\max}\big) \land \big(\text{fail}(cmd) < 3\big) \land \big(\text{dup\_ok}(cmd) < 4\big)$$

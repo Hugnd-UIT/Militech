@@ -67,9 +67,14 @@ class PovVerifierAgent(BaseAgent):
         def finish(thought, reply):
             extracted = self.extract_json(reply)
             if extracted and isinstance(extracted, dict):
-                self.log_action("finish")
-                self.log(thought=thought, action="finish", observation="PoV verifier completed")
-                return True, extracted
+                dec = str(extracted.get("decision", "")).strip().upper()
+                if not dec and extracted.get("issues"):
+                    dec = "RETRY"
+                if dec in ("CONFIRMED", "UNCONFIRMED", "RETRY"):
+                    extracted["decision"] = dec
+                    self.log_action("finish")
+                    self.log(thought=thought, action="finish", observation=f"PoV verifier: {dec}")
+                    return True, extracted
             return False, None
 
         return self.loop(finish=finish, default=False)

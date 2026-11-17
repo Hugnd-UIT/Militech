@@ -35,51 +35,50 @@ agent:
     2. MANDATORY: Re-run `python3 {{pov_script}}` directly in the sandbox via `bash` and observe stdout, stderr, exit codes, sanitizer traces, and side-effect markers, comparing them against `{{pov_result}}`.
     3. Evaluate Dual Alignment: verify execution reached the designated sink (location match) and manifested the hypothesized CWE weakness (mechanism match).
     4. Distinguish authentic vulnerability failure from benign crashes, script syntax defects, or missing environment dependencies.
-    5. If execution failed due to script/environment errors and retries remain, output `finish` with Feedback to PoV (`issues` and `suggestions`).
-    6. If runtime evidence proves vulnerability impact or retries are exhausted, output `finish` with Report to Coordinator (`CONFIRMED` or `UNCONFIRMED`) adhering to schema.
+    5. If execution failed due to script/environment errors (`ERROR` with `syntax`/`compile`/`missing_dep`/`timeout`) and retries remain, output `finish` with `decision: "RETRY"`, `issues`, and `suggestions`.
+    6. If runtime evidence proves vulnerability impact or proves it unreachable, output `finish` with `decision: "CONFIRMED"` or `"UNCONFIRMED"` adhering to schema.
 
     ## Scope - STRICT
     - Focus strictly on evaluating runtime execution evidence against target hypothesis expectations.
     - Base all reasoning and outputs strictly on demonstrable runtime outputs, exit codes, and side-effect markers.
     - Do not modify target source code; interact strictly through inspection tools in the sandbox.
-    - Emit `finish` ONLY when evaluation is complete and feedback or final report has been synthesized.
+    - Emit `finish` ONLY when evaluation is complete and `CONFIRMED`, `UNCONFIRMED`, or `RETRY` JSON has been synthesized.
 
     ## Schema
 
-    ### Feedback to PoV
-
     ```json
     {
-      "issues": [
-        "<string: issue>"
-      ],
-      "suggestions": [
-        "<string: suggestion>"
-      ]
-    }
-    ```
-
-    ### Report to Coordinator
-
-    ```json
-    {
-      "decision": "<string: CONFIRMED | UNCONFIRMED>",
-      "reason": "<string: verification reason>",
+      "decision": "<string: CONFIRMED | UNCONFIRMED | RETRY>",
+      "reason": "<string: concise verification rationale>",
       "alignment": {
         "location_match": "<boolean: reaches and affects designated sink>",
         "mechanism_match": "<boolean: matches hypothesized CWE mechanism>"
       },
-      "evidence": "<string: proof of vulnerability trigger>",
-      "reproducible": "<boolean: reproduction consistency>"
+      "evidence": "<string: proof of vulnerability trigger or observed failure>",
+      "reproducible": "<boolean: reproduction consistency>",
+      "issues": [
+        "<string: script/env issue when decision=RETRY>"
+      ],
+      "suggestions": [
+        "<string: actionable fix for PoV Generator when decision=RETRY>"
+      ]
     }
     ```
 
-    ## Example
+    ## Examples
 
-    ### Feedback to PoV
+    ### Retry Example
 
     ```json
     {
+      "decision": "RETRY",
+      "reason": "PoV script failed due to missing CLI argument",
+      "alignment": {
+        "location_match": false,
+        "mechanism_match": false
+      },
+      "evidence": "Usage error in stderr",
+      "reproducible": false,
       "issues": [
         "Input does not reach the target sink"
       ],
@@ -89,7 +88,7 @@ agent:
     }
     ```
 
-    ### Report to Coordinator
+    ### Confirmed Example
 
     ```json
     {
@@ -100,7 +99,9 @@ agent:
         "mechanism_match": true
       },
       "evidence": "Verification execution completed with return code 0 and target output confirmed",
-      "reproducible": true
+      "reproducible": true,
+      "issues": [],
+      "suggestions": []
     }
     ```
 

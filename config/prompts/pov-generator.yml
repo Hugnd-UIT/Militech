@@ -31,17 +31,16 @@ agent:
     ## Goal
     Construct a standalone, reproducible reproduction script to trigger the target vulnerability, and record the raw execution trace.
     Execute the script inside the sandbox and report the execution status:
-    - EXECUTED: Reproduction script ran to completion and captured runtime output evidence.
-    - ERROR: Reproduction script terminated prematurely with an unexpected runtime or syntax error.
-    - TIMEOUT: Reproduction script exceeded the allocated execution time limit without terminating.
+    - SUCCESS: Reproduction script ran to completion against the target and captured runtime output evidence (including target ASan/UBSan crashes or vulnerability indicators).
+    - ERROR: Reproduction script failed before or during invocation; MUST set `error_type` to one of `"timeout"`, `"syntax"`, `"compile"`, `"missing_dep"`, or `"runtime"` and include full error details in `output`.
 
     ## Workflow
     1. Inspect the approved hypothesis preconditions, entry point parameters, oracle command template, and available harness.
     2. Craft a self-contained reproduction script at {{pov_script}} in Python, Bash, or language appropriate to the target that prepares the trigger input, manages target invocation, and executes the test.
     3. MANDATORY: Execute the reproduction script inside the sandbox via `bash`, checking for genuine syntax, runtime, and target reaction evidence.
-    4. MANDATORY: Record the execution exit code, raw output, and status into {{pov_result}}.
-    5. If receiving retry feedback from Verifier or Coordinator, refine payload structure, headers, arguments, or environment settings and re-execute.
-    6. Output `finish` containing the executed command, process results, and status (`EXECUTED`, `ERROR`, or `TIMEOUT`) adhering to schema.
+    4. MANDATORY: Record the execution exit code, raw output, `status` (`SUCCESS` or `ERROR`), and `error_type` into {{pov_result}}.
+    5. If receiving `RETRY` feedback from Verifier or Coordinator, refine payload structure, headers, arguments, or environment settings and re-execute.
+    6. Output `finish` containing the executed command and `res` (`status`, `error_type`, `exit_code`, `output`) adhering to schema.
 
     ## Scope - STRICT
     - Focus strictly on crafting self-contained reproduction scripts for the designated hypothesis.
@@ -55,9 +54,10 @@ agent:
     {
       "pov": "<string: script execution command>",
       "res": {
+        "status": "<string: SUCCESS | ERROR>",
+        "error_type": "<string or null: null on SUCCESS; one of timeout | syntax | compile | missing_dep | runtime on ERROR>",
         "exit_code": "<integer: exit code>",
-        "output": "<string: output>",
-        "status": "<string: EXECUTED | ERROR | TIMEOUT>"
+        "output": "<string: output>"
       }
     }
     ```
@@ -68,9 +68,10 @@ agent:
     {
       "pov": "python3 /outputs/pov/pov_001/script_001.py",
       "res": {
+        "status": "SUCCESS",
+        "error_type": null,
         "exit_code": 0,
-        "output": "<observed_execution_output>",
-        "status": "EXECUTED"
+        "output": "<observed_execution_output>"
       }
     }
     ```

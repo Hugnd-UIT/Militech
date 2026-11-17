@@ -528,7 +528,7 @@ class CoordinatorAgent(BaseAgent):
             decision = str(verdict.get("decision", "")).upper()
             final_res = {
                 "flow_id": flow_id,
-                "status": decision if decision in ("CONFIRMED", "UNCONFIRMED") else "RETRYING",
+                "status": decision if decision in ("CONFIRMED", "UNCONFIRMED") else "RETRY",
                 "attempts": attempt,
                 "execution": exec_data,
                 "verdict": verdict,
