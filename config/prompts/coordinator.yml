@@ -30,10 +30,12 @@ agent:
        - If `Check build artifacts` is `PENDING` or `FAILED`, dispatch `repo-builder` to resolve dependencies, setup environment, write `/outputs/build/build.sh`, and produce `/outputs/build/status.json`.
        
     2. **PHASE 2 - Retrieve repo (`Check target files` & `Check flows retrieval`)**
-       - If `Check target files` is `PENDING`, dispatch `repo-retriever` on the next pending target file.
        - If `Check flows retrieval` is `PENDING`, dispatch `repo-retriever` to extract taint flows into `/outputs/graph/chunk_xxx/taint-flow-xxx.jsonl`.
+       - If `Check target files` is `PENDING` (and NOT `WAITING`), dispatch `repo-retriever` on the next pending target file.
+       - STRICT DEPTH-FIRST RULE: When a chunk is retrieved, you MUST analyze all its flows through Phase 3 (hypothesis) -> Phase 4 (PoV) -> Phase 5 (report) BEFORE retrieving any new target file. Never retrieve multiple target files in a row while existing flows remain unanalyzed!
 
     3. **PHASE 3 - Static analysis (`Check Hypothesis`)**
+       - If ANY flow in retrieved chunks has `Check hypothesis` as `PENDING`, you MUST dispatch `vuln-analyzer` for that flow. Do NOT retrieve new target files until all current flows are analyzed!
        - For each unanalyzed `flow_xxx` in the active chunk, dispatch `vuln-analyzer` to formulate a hypothesis and pass it to `vuln-debator` for debate.
         - If `VULNERABLE` and `ACCEPT`, save to `/outputs/hypothesis/approved/`.
         - If `BENIGN` and `ACCEPT`, save to `/outputs/hypothesis/rejected/`.

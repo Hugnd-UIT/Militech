@@ -102,16 +102,34 @@ class CoordinatorAgent(BaseAgent):
                 "details": "Repository has not been built yet. Dispatch repo-builder.",
             })
 
+        # Check hypothesis & unanalyzed flows
+        approved, rejected = self.state.list_hypotheses()
+        disputed = self.state.list_disputed_hypotheses()
+        all_flows = self.state.all_flows()
+        has_unanalyzed_flows = any(
+            _num_suffix(flow.get("id") or "") not in approved
+            and _num_suffix(flow.get("id") or "") not in disputed
+            and _num_suffix(flow.get("id") or "") not in rejected
+            for _, flow in all_flows
+        )
+
         # Check target files
         pending_targets = self.state.pending_files()
         if pending_targets:
             any_pending = True
             next_f = pending_targets[0]["file"]
-            sub_tasks.append({
-                "task_name": "Check target files",
-                "status": "PENDING",
-                "details": f"{len(pending_targets)} target files pending retrieval. Next: {next_f}.",
-            })
+            if has_unanalyzed_flows:
+                sub_tasks.append({
+                    "task_name": "Check target files",
+                    "status": "WAITING",
+                    "details": f"{len(pending_targets)} target files pending retrieval (next: {next_f}), but active chunk has unanalyzed flows. Complete Phase 3-5 for active flows before retrieving next file.",
+                })
+            else:
+                sub_tasks.append({
+                    "task_name": "Check target files",
+                    "status": "PENDING",
+                    "details": f"{len(pending_targets)} target files pending retrieval. Next: {next_f}.",
+                })
         else:
             sub_tasks.append({
                 "task_name": "Check target files",
@@ -146,9 +164,7 @@ class CoordinatorAgent(BaseAgent):
                     })
 
         # Check hypothesis
-        approved, rejected = self.state.list_hypotheses()
-        disputed = self.state.list_disputed_hypotheses()
-        for c_id, flow in self.state.all_flows():
+        for c_id, flow in all_flows:
             fid = str(flow.get("id") or "")
             num = _num_suffix(fid)
             if num in approved:
