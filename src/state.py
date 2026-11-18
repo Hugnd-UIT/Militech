@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from models import tracker
-from tools.dedup import rank_files
+from utils.dedup import rank_files
 
 REPORT_SECTIONS = (
     "### Summary",

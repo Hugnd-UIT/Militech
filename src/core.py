@@ -119,17 +119,17 @@ class Militech:
             import graphify
             graphify.callgraph(str(self.repo), str(graph_out), flow=str(flows_out))
             if flows_out.exists():
-                import tools.dedup
+                import utils.dedup
                 raw_lines = flows_out.read_text(encoding="utf-8").splitlines()
-                cleaned = tools.dedup.filter(raw_lines)
+                cleaned = utils.dedup.filter(raw_lines)
                 payload = "\n".join(json.dumps(x, ensure_ascii=False) for x in cleaned)
                 flows_out.write_text((payload + "\n") if payload else "", encoding="utf-8")
         except Exception as e:
             self.log.warning(f"Graphify: {e}")
 
         try:
-            import tools.fuzz
-            self.state.harness = tools.fuzz.check(self.repo, self.state.cache_dir)
+            import utils.fuzz
+            self.state.harness = utils.fuzz.check(self.repo, self.state.cache_dir)
         except Exception as e:
             self.log.warning(f"Fuzz harness check: {e}")
 

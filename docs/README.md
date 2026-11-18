@@ -38,7 +38,7 @@ Nếu cần vẽ ngắn gọn vào từng khối / mũi tên trên sơ đồ:
 
 ---
 
-## 2. Phase 0: Đồ thị gọi hàm & Lọc mã Production (`graphify` + `tools/dedup.py`)
+## 2. Phase 0: Đồ thị gọi hàm & Lọc mã Production (`graphify` + `utils/dedup.py`)
 
 ### 2.1. Biểu diễn đồ thị
 Mã nguồn mục tiêu được trích xuất thành đồ thị có hướng:
@@ -63,7 +63,7 @@ $$P_{\text{prod}}(f) = \text{Sort}^{\text{short}}\Big(\{\text{trim}(p) \mid p \i
 
 ---
 
-## 3. Phase 2: Hàm chấm điểm rủi ro & Xếp hạng Chunk (`tools/dedup.py`)
+## 3. Phase 2: Hàm chấm điểm rủi ro & Xếp hạng Chunk (`utils/dedup.py`)
 
 ### 3.1. Hàm chấm điểm heuristic cho mỗi flow $f$
 Từ chuỗi gọi $c = (v_0, \dots, v_k)$, xác định entry point $ep = v_0$ (điểm vào), sink operation $op = v_k$ (hàm nhạy cảm ở cuối), biến nguồn $var$, tệp đích $file$, và độ tin cậy $\text{conf} \in [0, 1]$. Điểm rủi ro $S(f) \in \mathbb{Z}$ được tính đúng theo hàm `score(flow)`:
