@@ -20,7 +20,6 @@ services:
       - CONTAINER_NAME=militech-${REPO_SLUG:-target}
     
     volumes:
-      - ${HOST_ROOT:-..}:/app:rw
       - ${HOST_OUTPUTS:-../outputs/target}:/outputs:rw
       - ${HOST_CONFIG:-../config/config.yml}:/app/config/config.yml:ro
     
