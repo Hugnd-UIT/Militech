@@ -1,5 +1,6 @@
 # Copy this file to config/config.yml and set your provider URL and API key.
 provider:
+  type: openai # openai | anthropic
   url: <YOUR_PROVIDER>
   key: <YOUR_KEY>
 

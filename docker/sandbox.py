@@ -6,11 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-class LocalSandbox:
-    """In-container sandbox adapter executing bash commands locally via subprocess."""
+class Sandbox:
 
     def __init__(self, name=None):
-        self.name = name or os.environ.get("MILITECH_CONTAINER_NAME", os.environ.get("HOSTNAME", "militech"))
+        self.name = name or os.environ.get("CONTAINER_NAME", os.environ.get("CONTAINER_NAMEE", os.environ.get("HOSTNAME", "militech")))
         self.status = "running"
 
     def exec_run(self, cmd, stdout=True, stderr=True):
@@ -38,7 +37,9 @@ def _docker_client():
 def init(repo_path=None, outputs_path="outputs"):
     client = _docker_client()
 
-    sandbox_name = "kali-linux"
+    repo_name = Path(repo_path).resolve().name if repo_path else "target"
+    slug = repo_name.lower().replace("_", "-")
+    sandbox_name = os.environ.get("CONTAINER_NAME", os.environ.get("CONTAINER_NAMEE", f"militech-{slug}"))
 
     volumes = {}
     if outputs_path:
@@ -49,6 +50,11 @@ def init(repo_path=None, outputs_path="outputs"):
         repo_dir = Path(repo_path).resolve()
         if repo_dir.exists():
             volumes[str(repo_dir)] = {'bind': '/data', 'mode': 'rw'}
+
+    root_dir = Path(__file__).resolve().parent.parent
+    cfg_file = root_dir / "config" / "config.yml"
+    if cfg_file.exists():
+        volumes[str(cfg_file)] = {'bind': '/app/config/config.yml', 'mode': 'ro'}
 
     found = client.containers.list(filters={'name': sandbox_name}, all=True)
 
@@ -64,7 +70,10 @@ def init(repo_path=None, outputs_path="outputs"):
                 container.stop()
             except Exception:
                 pass
-            container.remove()
+            try:
+                container.remove()
+            except Exception:
+                pass
             found = []
 
     if not found:
@@ -73,10 +82,11 @@ def init(repo_path=None, outputs_path="outputs"):
         try:
             client.images.get(image)
         except Exception:
-            if os.path.exists("docker/Dockerfile"):
-                client.images.build(path="docker", tag=image, rm=True)
-            elif os.path.exists("Dockerfile"):
-                client.images.build(path=".", tag=image, rm=True)
+            dockerfile = root_dir / "docker" / "Dockerfile"
+            if dockerfile.exists():
+                client.images.build(path=str(root_dir), dockerfile="docker/Dockerfile", tag=image, rm=True)
+            elif (root_dir / "Dockerfile").exists():
+                client.images.build(path=str(root_dir), tag=image, rm=True)
             else:
                 client.images.pull("kalilinux/kali-rolling")
                 image = "kalilinux/kali-rolling"
@@ -89,12 +99,17 @@ def init(repo_path=None, outputs_path="outputs"):
             name=sandbox_name,
             cap_add=['NET_ADMIN', 'SYS_PTRACE'],
             devices=["/dev/net/tun"],
-            environment={"DEBIAN_FRONTEND": "noninteractive"},
+            environment={
+                "DEBIAN_FRONTEND": "noninteractive",
+                "CONTAINER_NAME": sandbox_name,
+                "PYTHONUNBUFFERED": "1",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPATH": "/app",
+            },
             volumes=volumes,
             stdin_open=True
         )
 
-        # Set up container
         if image == "kalilinux/kali-rolling":
             commands = (
                 'apt update && '
@@ -111,8 +126,8 @@ def init(repo_path=None, outputs_path="outputs"):
         # Start TUN if needed
         container.exec_run('/bin/bash -c "mkdir -p /dev/net && mknod /dev/net/tun c 10 200 && chmod 600 /dev/net/tun"')
 
-        # Start VPN
-        container.exec_run('bash -c "openvpn /data/*.ovpn"', detach=True)
+        # Start VPN if .ovpn exists
+        container.exec_run('bash -c "compgen -G /data/*.ovpn > /dev/null && openvpn /data/*.ovpn"', detach=True)
         time.sleep(3)
 
     return container

@@ -4,10 +4,9 @@ import shutil
 from pathlib import Path
 
 from models import tracker
-from src.dedup import rank_target_files
+from src.dedup import rank_files
 
-
-REQUIRED_REPORT_SECTIONS = (
+REPORT_SECTIONS = (
     "### Summary",
     "### Details",
     "### PoC",
@@ -17,7 +16,6 @@ REQUIRED_REPORT_SECTIONS = (
 
 
 def _num_suffix(flow_id: str) -> str:
-    """Extract numeric suffix like '001' from 'flow_001' or return sanitized id."""
     m = re.search(r"(\d+)$", str(flow_id or ""))
     if m:
         return f"{int(m.group(1)):03d}"
@@ -26,8 +24,6 @@ def _num_suffix(flow_id: str) -> str:
 
 
 class State:
-    """Manages structured artifacts under outputs/ across all 4 pipeline phases."""
-
     def __init__(self, outputs_path="outputs"):
         self.outputs_path = Path(outputs_path).resolve()
         self.build_dir = self.outputs_path / "build"
@@ -45,7 +41,6 @@ class State:
         self.ensure_dirs()
 
     def to_container_path(self, path: str | Path) -> str:
-        """Translate any path under outputs/ to /outputs/... for container execution."""
         p = Path(path).resolve()
         try:
             rel = p.relative_to(self.outputs_path.resolve()).as_posix()
@@ -54,7 +49,6 @@ class State:
             return str(path)
 
     def ensure_dirs(self):
-        """Create standard outputs/ directory layout cleanly."""
         for d in (
             self.build_dir,
             self.cache_dir,
@@ -68,7 +62,6 @@ class State:
             d.mkdir(parents=True, exist_ok=True)
 
     def check_structure(self) -> tuple[bool, list[str]]:
-        """Verify required directories exist and list any unexpected root entries."""
         expected = {"build", "cache", "graph", "hypothesis", "pov", "report"}
         missing = sorted(d for d in expected if not (self.outputs_path / d).is_dir())
         extra = sorted(
@@ -77,7 +70,6 @@ class State:
         ) if self.outputs_path.exists() else []
         return (not missing and not extra), missing + extra
 
-    # --- Phase 1: Build ---
     def get_build_status(self) -> dict:
         status_file = self.build_dir / "status.json"
         if not status_file.exists():
@@ -90,7 +82,6 @@ class State:
             pass
         return {"status": "INVALID"}
 
-    # --- Phase 2: Graph & Chunks ---
     def call_graph_path(self) -> Path:
         return self.graph_dir / "call-graph.json"
 
@@ -98,7 +89,6 @@ class State:
         return self.graph_dir / "call-flows.jsonl"
 
     def get_chunks(self) -> list[dict]:
-        """Inspect chunk_xxx directories and derive target_file + retrieved flows."""
         chunks = []
         if not self.graph_dir.exists():
             return chunks
@@ -165,10 +155,9 @@ class State:
 
     def pending_files(self) -> list[dict]:
         done = [c["target_file"] for c in self.get_chunks() if c["target_file"]]
-        return rank_target_files(self.call_flows_path(), done_files=done)
+        return rank_files(self.call_flows_path(), done_files=done)
 
     def create_chunk(self, target_file: str) -> dict | None:
-        """Slice all call-flows matching target_file into chunk_xxx/chunk-flow-xxx.jsonl."""
         flows_file = self.call_flows_path()
         if not flows_file.exists():
             return None
@@ -212,7 +201,7 @@ class State:
             "flows": [],
         }
 
-    def all_flows(self) -> list[dict]:
+    def all_flows(self) -> list[tuple[str, dict]]:
         items = []
         for c in self.get_chunks():
             for flow in c["flows"]:
@@ -228,7 +217,6 @@ class State:
                     return c["output_file"], flow
         return None, None
 
-    # --- Phase 3: Hypothesis & Debate ---
     def save_hypothesis(self, flow_id: str, data: dict, approved: bool | None = True, status: str | None = None) -> str:
         num = _num_suffix(flow_id)
         filename = f"hypothesis_{num}.json"
@@ -267,15 +255,12 @@ class State:
         return res
 
     def list_hypotheses(self) -> tuple[dict[str, dict], dict[str, dict]]:
-        """Return (approved_map, rejected_map) keyed by numeric suffix '001'."""
         return self._scan_hypotheses(self.approved_dir), self._scan_hypotheses(self.rejected_dir)
 
     def list_disputed_hypotheses(self) -> dict[str, dict]:
-        """Return disputed hypotheses awaiting empirical PoV arbitration."""
         return self._scan_hypotheses(self.disputed_dir)
 
     def promote_disputed(self, flow_id: str, approved: bool) -> str | None:
-        """Move a disputed hypothesis into approved/ or rejected/ after PoV verification."""
         num = _num_suffix(flow_id)
         src = self.disputed_dir / f"hypothesis_{num}.json"
         if not src.exists():
@@ -287,7 +272,6 @@ class State:
         data["pov_verified"] = "CONFIRMED" if approved else "UNCONFIRMED"
         return self.save_hypothesis(flow_id, data, status="approved" if approved else "rejected")
 
-    # --- Phase 4: PoV & Report ---
     def pov_paths(self, flow_id: str) -> tuple[Path, Path]:
         num = _num_suffix(flow_id)
         pdir = self.pov_dir / f"pov_{num}"
@@ -337,8 +321,7 @@ class State:
         return reports
 
     def save_report(self, markdown_content: str, pov_script_path: str | Path, vuln_id: str | None = None) -> tuple[bool, str]:
-        """Validate required GitHub Advisory headings, copy pov.py, and write report.md."""
-        missing = [sec for sec in REQUIRED_REPORT_SECTIONS if sec.lower() not in markdown_content.lower()]
+        missing = [sec for sec in REPORT_SECTIONS if sec.lower() not in markdown_content.lower()]
         if missing:
             return False, f"Missing required sections: {', '.join(missing)}"
 
@@ -354,9 +337,7 @@ class State:
         (vdir / "report.md").write_text(markdown_content.strip() + "\n", encoding="utf-8")
         return True, str(vdir)
 
-    # --- Metrics ---
     def save_metrics(self, elapsed_sec: float) -> str:
-        """Write minimal QuotaTracker telemetry + elapsed timings to outputs/cache/metrics.json."""
         data = {"elapsed_sec": round(float(elapsed_sec), 2)}
         if self.first_pov_sec is not None:
             data["first_pov_sec"] = round(float(self.first_pov_sec), 2)
@@ -367,4 +348,4 @@ class State:
         return str(out)
 
 
-__all__ = ["State", "REQUIRED_REPORT_SECTIONS"]
+__all__ = ["State", "REPORT_SECTIONS", "_num_suffix"]

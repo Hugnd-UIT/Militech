@@ -67,7 +67,6 @@ to_docker_path() {
     fi
 }
 
-# Expand shorthand `owner/repo` -> https://github.com/owner/repo.git
 if [[ ! -d "$TARGET" ]] && [[ "$TARGET" != *"://"* ]] && [[ "$TARGET" != git@* ]] && [[ "$TARGET" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
     TARGET="https://github.com/$TARGET.git"
 fi
@@ -86,14 +85,12 @@ export TARGET BRANCH REPO_NAME REPO_SLUG
 export HOST_OUTPUTS="$(to_docker_path "$OUT_DIR")"
 export HOST_CONFIG="$(to_docker_path "$SCRIPT_DIR/config/config.yml")"
 
-# Prevent collision if same target container is currently running
 if "$DOCKER_BIN" ps --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
     echo "[!] Container $CONTAINER_NAME is already running. Logs: docker logs -f $CONTAINER_NAME"
     exit 1
 fi
 
 if [[ -d "$TARGET" ]]; then
-    # Local folder fallback: build if needed, copy into /data cleanly via /host_repo mount
     if [[ "$REBUILD" -eq 1 ]] || ! "$DOCKER_BIN" image inspect "$IMAGE" >/dev/null 2>&1; then
         "$DOCKER_BIN" build -t "$IMAGE" -f "$SCRIPT_DIR/docker/Dockerfile" "$SCRIPT_DIR"
     fi
@@ -104,12 +101,12 @@ if [[ -d "$TARGET" ]]; then
         --name "$CONTAINER_NAME"
         --cap-add=NET_ADMIN --cap-add=SYS_PTRACE
         --add-host=host.docker.internal:host-gateway
-        -e "MILITECH_CONTAINER_NAME=$CONTAINER_NAME"
+        -e "CONTAINER_NAME=$CONTAINER_NAME"
         -v "$HOST_OUTPUTS:/outputs:rw"
         -v "$(to_docker_path "$ABS_TARGET"):/host_repo:ro"
     )
     [[ -f "$SCRIPT_DIR/config/config.yml" ]] && DOCKER_ARGS+=(-v "$HOST_CONFIG:/app/config/config.yml:ro")
-    "$DOCKER_BIN" "${DOCKER_ARGS[@]}" "$IMAGE" /host_repo --outputs /outputs --in-container >/dev/null
+    "$DOCKER_BIN" "${DOCKER_ARGS[@]}" "$IMAGE" /host_repo >/dev/null
 else
     COMPOSE_ARGS=(-p "$CONTAINER_NAME" -f "$COMPOSE_FILE" up -d)
     if [[ "$REBUILD" -eq 1 ]] || ! "$DOCKER_BIN" image inspect "$IMAGE" >/dev/null 2>&1; then
@@ -118,7 +115,7 @@ else
     "$DOCKER_BIN" compose "${COMPOSE_ARGS[@]}"
 fi
 
-echo "[+] Started $CONTAINER_NAME in background (outputs -> outputs/$REPO_NAME)"
+echo "[+] Started $CONTAINER_NAME in background"
 echo "    Logs: docker logs -f $CONTAINER_NAME"
 echo "    Stop: docker stop $CONTAINER_NAME"
 

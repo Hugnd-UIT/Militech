@@ -148,7 +148,7 @@ def dedup(flows):
     return [item[1] for item in clusters.values()]
 
 
-def rank(flows):
+def rank_flows(flows):
     return sorted(flows, key=lambda f: score(f), reverse=True)
 
 
@@ -369,7 +369,7 @@ def filter(flows):
     return cleaned
 
 
-def rank_target_files(flows_path, done_files=None):
+def rank_files(flows_path, done_files=None):
     """Group filtered call-flows by file and return pending files ranked by risk."""
     import json
     from pathlib import Path
@@ -414,4 +414,4 @@ def rank_target_files(flows_path, done_files=None):
     return ranked
 
 
-__all__ = ["score", "dedup", "rank", "combine", "filter", "rank_target_files"]
+__all__ = ["score", "dedup", "rank_flows", "rank_files", "combine", "filter"]

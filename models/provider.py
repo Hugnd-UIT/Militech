@@ -7,7 +7,7 @@ from anthropic import Anthropic as _AnthropicClient
 
 log = logging.getLogger("provider")
 
-POLICY_BLOCK_PREFIX = "[!] Blocked by safety policy"
+POLICY = "[!] Blocked by safety policy"
 
 
 def retry(call_fn, agent_name="", max_retries=8, base_delay=4.0):
@@ -58,7 +58,6 @@ def config(config_path=None):
 
 
 def _resolve_url(url):
-    """Rewrite localhost proxy URLs to host.docker.internal when running inside a container."""
     if not url or not str(url).strip():
         return None
     s = str(url).strip()
@@ -92,7 +91,7 @@ class OpenAI:
         else:
             self.model = ""
 
-        # Initialize client (max_retries=0 so retry() owns backoff & logging cleanly)
+        # Initialize client
         self.client = _OpenAIClient(
             api_key=self.key or "none",
             base_url=self.url,
@@ -125,7 +124,7 @@ class OpenAI:
             pf = inner_resp.get("promptFeedback") if isinstance(inner_resp, dict) else None
             reason = pf.get("blockReason") if pf else "safety filter"
             log.warning(f"[{self.agent_name}] Request blocked by safety policy ({reason})")
-            return f"{POLICY_BLOCK_PREFIX} ({reason})"
+            return f"{POLICY} ({reason})"
 
         # Track usage
         usage = getattr(response, "usage", None)
@@ -158,7 +157,7 @@ class OpenAI:
 
         if not content and finish_reason in ("content_filter", "safety"):
             log.warning(f"[{self.agent_name}] Response blocked by safety filter.")
-            return f"{POLICY_BLOCK_PREFIX} (content_filter)"
+            return f"{POLICY} (content_filter)"
 
         if finish_reason == "length":
             log.warning(f"[{self.agent_name}] Response was truncated due to output token limit.")
@@ -193,7 +192,7 @@ class Anthropic:
         else:
             self.model = ""
 
-        # Initialize client (max_retries=0 so retry() owns backoff & logging cleanly)
+        # Initialize client
         self.client = _AnthropicClient(
             api_key=self.key or "none",
             base_url=self.url,
@@ -282,7 +281,7 @@ class Anthropic:
 
         if not content and stop_reason in ("content_filter", "safety"):
             log.warning(f"[{self.agent_name}] Anthropic response blocked by safety filter.")
-            return f"{POLICY_BLOCK_PREFIX} (content_filter)"
+            return f"{POLICY} (content_filter)"
 
         if stop_reason == "max_tokens":
             log.warning(f"[{self.agent_name}] Anthropic response was truncated due to output token limit.")
@@ -294,4 +293,31 @@ class Anthropic:
         return self.chat(messages, **kwargs)
 
 
-__all__ = ["OpenAI", "Anthropic", "config", "retry"]
+def get_provider(config_path=None, provider_name=None):
+
+    if provider_name:
+        p = str(provider_name).strip().lower()
+        if "anthropic" in p:
+            return Anthropic
+        if "openai" in p:
+            return OpenAI
+
+    cfg = config(config_path)
+    p_cfg = cfg.get("provider", {}) or {}
+
+    p_type = str(p_cfg.get("type") or p_cfg.get("name") or "").strip().lower()
+    if p_type == "anthropic":
+        return Anthropic
+    if p_type == "openai":
+        return OpenAI
+
+    key = str(p_cfg.get("key") or "").strip()
+    url = str(p_cfg.get("url") or "").strip().lower()
+
+    if key.startswith("sk-ant-") or "anthropic.com" in url:
+        return Anthropic
+
+    return OpenAI
+
+
+__all__ = ["OpenAI", "Anthropic", "config", "retry", "get_provider"]

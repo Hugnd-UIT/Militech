@@ -9,7 +9,7 @@ _root = Path(__file__).resolve().parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from docker.sandbox import LocalSandbox
+from docker.sandbox import Sandbox
 from src.state import State
 from utils.logger import setup_logger
 
@@ -64,12 +64,10 @@ def _prepare_repo(repo_arg: str, branch: str | None = None, in_container: bool =
 
 
 class Militech:
-    """Entry-point orchestrator initializing sandbox, graphify, and the Master Coordinator."""
-
     def __init__(
         self,
         repo_path,
-        outputs_path="outputs",
+        outputs_path=None,
         config_path=None,
         provider_cls=None,
         branch=None,
@@ -79,19 +77,23 @@ class Militech:
         self.repo_label = _repo_name(repo_path)
         self.repo = _prepare_repo(repo_path, branch=branch, in_container=self.in_container)
 
+        if outputs_path is None:
+            outputs_path = "/outputs" if self.in_container else "outputs"
         base_outputs = Path(outputs_path).resolve()
         if self.in_container or base_outputs.name == self.repo_label:
             self.outputs_path = base_outputs
         else:
             self.outputs_path = base_outputs / self.repo_label
 
+        if config_path is None:
+            config_path = "/app/config/config.yml" if self.in_container else "config/config.yml"
         self.config_path = config_path
         self.state = State(self.outputs_path)
         self.log = setup_logger(log_file=self.state.cache_dir / "agents.log")
 
         if provider_cls is None:
-            from models.provider import OpenAI
-            self.provider_cls = OpenAI
+            from models.provider import get_provider
+            self.provider_cls = get_provider(self.config_path)
         else:
             self.provider_cls = provider_cls
 
@@ -100,18 +102,16 @@ class Militech:
         self.container = None
 
     def init_sandbox(self):
-        """Initialize execution sandbox (local subprocess in container, or Docker from host)."""
         if self.in_container:
-            self.container = LocalSandbox()
+            self.container = Sandbox()
         else:
             from docker.sandbox import init as sandbox_init
             self.container = sandbox_init(repo_path=str(self.repo), outputs_path=str(self.outputs_path))
         self.log.info(f"{self.container.name} [{self.container.status}]")
         return self.container
 
-    def phase_graph(self):
-        """Run graphify AST call-graph extraction and filter raw call-flows."""
-        self.log.info("=== Static Graph Extraction ===")
+    def graphify(self):
+        self.log.info("=== Graphify ===")
         graph_out = self.state.call_graph_path()
         flows_out = self.state.call_flows_path()
 
@@ -135,10 +135,9 @@ class Militech:
             self.log.warning(f"Fuzz harness check: {e}")
 
     def run(self):
-        """Initialize environment and hand control over to CoordinatorAgent."""
         start = time.time()
         self.init_sandbox()
-        self.phase_graph()
+        self.graphify()
 
         from agents import CoordinatorAgent
         coordinator = CoordinatorAgent(
@@ -151,7 +150,7 @@ class Militech:
 
         coord_result = None
         try:
-            self.log.info("=== Coordinator Supervision ===")
+            self.log.info("=== Militech ===")
             coord_result = coordinator.run(repo=self.repo_container)
         finally:
             elapsed = time.time() - start
@@ -173,26 +172,11 @@ def main():
     parser = argparse.ArgumentParser(description="Militech")
     parser.add_argument("repo", help="Path or Git URL of target repository")
     parser.add_argument("--branch", default=None, help="Git branch/tag when cloning URL target")
-    parser.add_argument("--outputs", default="outputs", help="Path to outputs directory")
-    parser.add_argument("--config", default=None, help="Path to config.yml")
-    parser.add_argument("--provider", default="openai", choices=["openai", "anthropic"], help="LLM provider")
-    parser.add_argument("--in-container", dest="in_container", action="store_true", default=None, help="Run directly inside container without docker-py")
     args = parser.parse_args()
-
-    if args.provider == "anthropic":
-        from models.provider import Anthropic
-        provider_cls = Anthropic
-    else:
-        from models.provider import OpenAI
-        provider_cls = OpenAI
 
     app = Militech(
         repo_path=args.repo,
-        outputs_path=args.outputs,
-        config_path=args.config,
-        provider_cls=provider_cls,
         branch=args.branch,
-        in_container=args.in_container,
     )
     res = app.run()
 

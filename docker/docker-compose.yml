@@ -17,7 +17,7 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONPATH=/app
-      - MILITECH_CONTAINER_NAME=militech-${REPO_SLUG:-target}
+      - CONTAINER_NAME=militech-${REPO_SLUG:-target}
     
     volumes:
       - ${HOST_OUTPUTS:-../outputs/target}:/outputs:rw
@@ -27,7 +27,4 @@ services:
       - "${TARGET:?Set TARGET=<git_url>}"
       - "--branch"
       - "${BRANCH:-}"
-      - "--outputs"
-      - "/outputs"
-      - "--in-container"
     restart: "no"
