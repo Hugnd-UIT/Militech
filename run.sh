@@ -13,7 +13,7 @@ BRANCH=""
 REBUILD=0
 
 usage() {
-    echo "Usage: bash run.sh <owner/repo | git_url | local_path> [--branch <tag>] [--rebuild]"
+    echo "Usage: bash run.sh <owner/repo | git_url | local_path> [--branch <tag>] [-f|--rebuild]"
     exit "${1:-1}"
 }
 
@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
             [[ -n "$BRANCH" ]] || usage
             shift 2
             ;;
-        --rebuild)
+        --rebuild|-f)
             REBUILD=1
             shift
             ;;
