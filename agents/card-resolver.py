@@ -6,19 +6,14 @@ from typing import Dict, List
 
 @dataclass
 class AgentSkill:
-    """Single capability entry from an agent's A2A card."""
-
     id: str
     name: str
     description: str = ""
-    tags: List[str] = field(default_factory=list)
     examples: List[str] = field(default_factory=list)
 
 
 @dataclass
 class AgentCard:
-    """Parsed A2A agent card loaded from .well-known/agent.json."""
-
     key: str
     name: str
     description: str = ""
@@ -26,33 +21,27 @@ class AgentCard:
     skills: List[AgentSkill] = field(default_factory=list)
 
     def to_prompt(self) -> str:
-        """Format compact capability description for Coordinator injection."""
         lines = [
             f"- agent_key: `{self.key}` | name: {self.name}",
             f"  description: {self.description}",
             "  skills:",
         ]
         for s in self.skills:
-            tags_str = ", ".join(s.tags)
-            lines.append(f"    - {s.id} ({s.name}): {s.description} [tags: {tags_str}]")
+            lines.append(f"    - {s.id} ({s.name}): {s.description}")
         return "\n".join(lines)
 
 
 class CardResolver:
-    """Discovers and resolves A2A agent cards under the agents directory."""
-
     def __init__(self, agents_dir: str | Path | None = None):
         self.agents_dir = Path(agents_dir) if agents_dir else Path(__file__).resolve().parent
 
     def load_card(self, card_path: Path, key: str) -> AgentCard:
-        """Load and parse a single .well-known/agent.json file."""
         data = json.loads(card_path.read_text(encoding="utf-8"))
         skills = [
             AgentSkill(
                 id=str(s.get("id", "")),
                 name=str(s.get("name", "")),
                 description=str(s.get("description", "")),
-                tags=list(s.get("tags") or []),
                 examples=list(s.get("examples") or []),
             )
             for s in (data.get("skills") or [])
@@ -66,8 +55,7 @@ class CardResolver:
             skills=skills,
         )
 
-    def resolve_all(self) -> Dict[str, AgentCard]:
-        """Resolve all worker agent cards sorted alphabetically by folder name."""
+    def resolve_card(self) -> Dict[str, AgentCard]:
         cards: Dict[str, AgentCard] = {}
         if not self.agents_dir.exists():
             return cards
@@ -80,9 +68,8 @@ class CardResolver:
                 cards[entry.name] = self.load_card(card_path, key=entry.name)
         return cards
 
-    def format_available_agents(self, cards: Dict[str, AgentCard] | None = None) -> str:
-        """Render resolved worker cards as a clean prompt block."""
-        resolved = cards if cards is not None else self.resolve_all()
+    def get_agents(self, cards: Dict[str, AgentCard] | None = None) -> str:
+        resolved = cards if cards is not None else self.resolve_card()
         if not resolved:
             return "No worker agents registered."
         return "\n".join(card.to_prompt() for card in resolved.values())

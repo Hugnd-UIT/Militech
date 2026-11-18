@@ -20,23 +20,18 @@ agent:
     - Status file path: {{status_file}}
 
     ## Goal
-    Prepare the runtime environment, resolve dependencies, write `{{build_script}}`, and compile/install the target project inside the sandbox (enabling ASan/UBSan flags when applicable for C/C++/Rust).
-    Ensure the built application executes cleanly, write `{{status_file}}`, and conclude with:
-    - READY: Dependencies resolved, target project compiled/installed successfully, and confirmed runnable via a smoke test.
-    - FAILED: Compilation or dependency installation failed due to unresolvable errors, missing tools, or broken manifests.
+    Prepare runtime environment, resolve dependencies, and build the target repository:
+    - READY: Target dependencies resolved, project built cleanly, and verified runnable via a smoke test.
+    - FAILED: Build or dependency installation failed due to unresolvable errors or missing tools.
 
-    ## Workflow
-    1. Inspect directory structure and manifests on disk to identify language, entry type (`cli | library | web_service`), and build requirements.
-    2. Install required dependencies, compilers, and language runtime tools using `bash`.
-    3. Write the reproducible build commands to `{{build_script}}` and execute it to build/prepare the target project.
-    4. Run a quick smoke test to verify the built application executes cleanly.
-    5. Save status JSON to `{{status_file}}` and output `finish` adhering to schema.
+    ## Workflow - REFERENCE
+    1. Inspect manifests to identify language and entry type (`cli`, `service`, or `library`).
+    2. Resolve dependencies and write reproducible build commands to `{{build_script}}`.
+    3. Execute `{{build_script}}`, run a smoke test, and record status into `{{status_file}}`.
 
     ## Scope - STRICT
-    - Focus strictly on preparing the environment and compiling the target project; do not analyze vulnerabilities.
-    - Base all reasoning and outputs strictly on concrete manifest files and compiler outputs on disk.
-    - Do not modify application source code; interact strictly through environment tools and build scripts.
-    - Emit `finish` ONLY when `{{build_script}}` and `{{status_file}}` are recorded and target build has been verified.
+    - Focus strictly on preparing the build environment; do not analyze vulnerabilities.
+    - NEVER modify target source code; interact only via build scripts and environment tools.
 
     ## Schema
 
@@ -44,23 +39,8 @@ agent:
     {
       "status": "<string: READY | FAILED>",
       "language": "<string: primary language>",
-      "entry_type": "<string: cli | library | web_service>",
-      "run_cmd": "<string: command to run binary or start service, or null>",
-      "sanitizers": [
-        "<string: address | undefined | none>"
-      ]
-    }
-    ```
-
-    ## Example
-
-    ```json
-    {
-      "status": "READY",
-      "language": "cpp",
-      "entry_type": "cli",
-      "run_cmd": "/data/build/bin/app",
-      "sanitizers": ["address", "undefined"]
+      "entry_type": "<string: cli | library | service>",
+      "run_cmd": "<string: command to run executable binary or start background service, or null for library>"
     }
     ```
 

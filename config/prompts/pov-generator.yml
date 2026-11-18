@@ -9,8 +9,8 @@ agent:
 
   user-prompt: |
     ## Rules - STRICT
-    - Use `bash` to craft reproduction script and execute test inside sandbox.
-    - Use `finish` ONLY when reproduction script has been written and executed.
+    - Use `bash` to craft script and execute script inside sandbox.
+    - Use `finish` ONLY when script has been written and executed sucessfully.
     - You MUST strictly adhere to the JSON schema when outputting finish.
 
     ## Context
@@ -29,24 +29,18 @@ agent:
     ```
 
     ## Goal
-    Construct a standalone, reproducible reproduction script to trigger the target vulnerability, and record the raw execution trace.
-    Execute the script inside the sandbox and report the execution status:
-    - SUCCESS: Reproduction script ran to completion against the target and captured runtime output evidence (including target ASan/UBSan crashes or vulnerability indicators).
-    - ERROR: Reproduction script failed before or during invocation; MUST set `error_type` to one of `"timeout"`, `"syntax"`, `"compile"`, `"missing_dep"`, or `"runtime"` and include full error details in `output`.
+    Construct a PoV script to exploit the vulnerability and inspect execution results:
+    - SUCCESS: Script executes cleanly and satisfies the hypothesis oracle.
+    - ERROR: Script execution fails due to environment defect or target defense.
 
-    ## Workflow
-    1. Inspect the approved hypothesis preconditions, entry point parameters, oracle command template, and available harness.
-    2. Craft a self-contained reproduction script at {{pov_script}} in Python, Bash, or language appropriate to the target that prepares the trigger input, manages target invocation, and executes the test.
-    3. MANDATORY: Execute the reproduction script inside the sandbox via `bash`, checking for genuine syntax, runtime, and target reaction evidence.
-    4. MANDATORY: Record the execution exit code, raw output, `status` (`SUCCESS` or `ERROR`), and `error_type` into {{pov_result}}.
-    5. If receiving `RETRY` feedback from Verifier or Coordinator, refine payload structure, headers, arguments, or environment settings and re-execute.
-    6. Output `finish` containing the executed command and `res` (`status`, `error_type`, `exit_code`, `output`) adhering to schema.
+    ## Workflow - REFERENCE
+    1. Read {{hypothesis}} and {{harness}} if available.
+    2. Write script to `{{pov_script}}`, execute script, and record results into `{{pov_result}}`.
+    3. If receiving retry feedback, revise the script and re-execute.
 
     ## Scope - STRICT
-    - Focus strictly on crafting self-contained reproduction scripts for the designated hypothesis.
-    - Base all reasoning and outputs strictly on concrete parameter formats and preconditions from the hypothesis.
-    - Do not modify target source code; interact strictly through external input surfaces within the sandbox.
-    - Emit `finish` ONLY AFTER the reproduction script has been tested via execution and outputs are fully recorded into `{{pov_result}}`.
+    - Craft self-contained PoV scripts strictly based on `{{hypothesis}}`.
+    - NEVER modify target source code; interact only via external inputs.
 
     ## Schema
 
@@ -55,23 +49,9 @@ agent:
       "pov": "<string: script execution command>",
       "res": {
         "status": "<string: SUCCESS | ERROR>",
-        "error_type": "<string or null: null on SUCCESS; one of timeout | syntax | compile | missing_dep | runtime on ERROR>",
+        "error_type": "<string or null: null on SUCCESS; one of timeout | syntax | compile | missing_dep | runtime | blocked | unreachable | oracle_unmet on ERROR>",
         "exit_code": "<integer: exit code>",
         "output": "<string: output>"
-      }
-    }
-    ```
-
-    ## Example
-
-    ```json
-    {
-      "pov": "python3 /outputs/pov/pov_001/script_001.py",
-      "res": {
-        "status": "SUCCESS",
-        "error_type": null,
-        "exit_code": 0,
-        "output": "<observed_execution_output>"
       }
     }
     ```

@@ -23,6 +23,7 @@ class RepoBuilderAgent(BaseAgent):
             "package.json", "setup.py", "pyproject.toml", "requirements.txt",
             "Cargo.toml", "go.mod", "pom.xml", "build.gradle"
         }
+
         found = []
         if self.sandbox:
             code, out = self.execute(f"ls -a {repo_path}")
@@ -55,8 +56,9 @@ class RepoBuilderAgent(BaseAgent):
             build_script=str(build_script),
             status_file=str(status_file),
         )
+
         if task_hint:
-            initial_task += f"\n\n## Coordinator Note\n{task_hint}\n"
+            initial_task += f"\n\n## Note\n{task_hint}\n"
 
         self.messages = [
             {"role": "system", "content": self.system_prompt},
@@ -69,6 +71,7 @@ class RepoBuilderAgent(BaseAgent):
                 _, raw = self.execute(f"cat {status_file} 2>/dev/null")
                 if raw:
                     extracted = self.extract_json(raw)
+                    
             if extracted and isinstance(extracted, dict):
                 if self.sandbox and status_file:
                     payload = json.dumps(extracted, indent=2, ensure_ascii=False)
@@ -76,11 +79,13 @@ class RepoBuilderAgent(BaseAgent):
                 self.log_action("finish")
                 self.log(thought=thought, action="finish", observation="Repo builder completed")
                 return True, extracted
+            
             return False, None
 
         return self.loop(finish=finish, default=False)
 
-    def explain_failure(self):
+    # Explain why the target failed to build
+    def explain(self):
         query = (
             "The repository build failed or could not be completed. "
             "Please explain concisely why the target failed to build, "

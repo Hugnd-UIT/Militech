@@ -1,6 +1,5 @@
 import json
 import time
-from pathlib import Path
 
 from agents.base import BaseAgent
 from models.provider import OpenAI
@@ -9,7 +8,7 @@ from src.state import State, _num_suffix
 
 class CoordinatorAgent(BaseAgent):
 
-    extra_actions = ("check_status", "call_agent", "report")
+    extra_actions = ("call_agent", "report")
 
     def __init__(
         self,
@@ -19,7 +18,7 @@ class CoordinatorAgent(BaseAgent):
         state: State | None = None,
         outputs_path="outputs",
         max_debate_rounds=3,
-        max_pov_rounds=3,
+        max_exploit_rounds=3,
     ):
         super().__init__(
             name="coordinator",
@@ -27,185 +26,159 @@ class CoordinatorAgent(BaseAgent):
             config_path=config_path,
             provider_cls=provider_cls,
         )
+
         self.config_path = config_path
         self.provider_cls = provider_cls
         self.state = state or State(outputs_path)
         self.repo_path = "/data" if sandbox else "."
         self.max_debate_rounds = int(max_debate_rounds)
-        self.max_pov_rounds = int(max_pov_rounds)
+        self.max_exploit_rounds = int(max_exploit_rounds)
         self.start_time = time.time()
 
         # Load A2A worker cards
         from agents import card_resolver
         self.resolver = card_resolver.CardResolver()
-        self.cards = self.resolver.resolve_all()
+        self.cards = self.resolver.resolve_card()
 
     def execute(self, command, timeout=None):
-        """Allow Coordinator read-only bash inspection across /outputs and /data."""
+        """
+        The coordinator has read-only access
+        """
         cmd = str(command or "").strip()
         if any(tok in cmd for tok in (" >", ">>", "rm ", "mv ", "cp ", "sed -i", "tee ")):
             return 1, "Coordinator bash is read-only; do not modify files or artifacts directly."
         return super().execute(command, timeout=timeout)
 
-    @staticmethod
-    def _debate_trace(hyp: dict) -> str:
-        hist = hyp.get("debate_history") or []
-        if not hist:
-            return ""
-        parts = [
-            f"R{h.get('round')}:{h.get('analyzer_verdict')}/{h.get('debator_decision')}"
-            for h in hist
-        ]
-        return "[" + " -> ".join(parts) + "]"
+    def render(self, template, **kwargs):
+        if template == self.react_prompt and "status" not in kwargs:
+            kwargs["status"] = json.dumps(self.check_status(), indent=2, ensure_ascii=False)
+        return super().render(template, **kwargs)
 
-    @staticmethod
-    def _norm(name: str) -> str:
-        return str(name or "").lower().replace(" ", "").replace("_", "").replace("-", "")
-
-    def _container_path(self, host_path: str | Path) -> str:
-        """Translate host outputs/ path to /outputs/... when running inside Docker sandbox."""
-        if not self.sandbox:
-            return str(host_path)
-        p = Path(host_path).resolve()
-        try:
-            rel = p.relative_to(self.state.outputs_path.resolve()).as_posix()
-            return f"/outputs/{rel}"
-        except ValueError:
-            return str(host_path)
-
-    # --- State Supervision (Arasaka TaskQueue JSON) ---
+    # Status-checking tool for coordinators
     def check_status(self) -> dict:
-        """Build Arasaka-style TaskQueue JSON summarizing all 4 phases."""
         sub_tasks = []
         any_pending = False
         any_failed = False
 
-        # 1. Output Directory Structure
+        # Check output directory structure
         struct_ok, issues = self.state.check_structure()
         if struct_ok:
             sub_tasks.append({
-                "task_name": "Check Output Directory Structure",
+                "task_name": "Check outputs directory",
                 "status": "SUCCESS",
-                "details": "The /outputs directory is properly structured (build, graph, hypothesis, pov, report, cache).",
+                "details": "The /outputs directory is properly structured.",
             })
         else:
             any_failed = True
             sub_tasks.append({
-                "task_name": "Check Output Directory Structure",
+                "task_name": "Check outputs directory",
                 "status": "FAILED",
                 "details": f"Directory mismatch in /outputs: {issues}.",
             })
 
-        # 2. Build Artifacts (Phase 1)
+        # Check build artifacts
         build = self.state.get_build_status()
         b_status = str(build.get("status", "PENDING")).upper()
         if b_status == "READY":
             sub_tasks.append({
-                "task_name": "Check Build Artifacts",
+                "task_name": "Check build artifacts",
                 "status": "SUCCESS",
-                "details": f"Repository built at /outputs/build (language: {build.get('language', 'unknown')}, entry_type: {build.get('entry_type', 'cli')}).",
+                "details": f"Repository built at /outputs/build successfully.",
             })
         elif b_status == "FAILED":
             any_failed = True
+            reason = str(build.get("reason", "")).strip()
+            details = f"Build failed in /outputs/build/status.json: {reason} Fix or retry Repo Builder." if reason else "Build failed in /outputs/build/status.json. Fix or retry Repo Builder."
             sub_tasks.append({
-                "task_name": "Check Build Artifacts",
+                "task_name": "Check build artifacts",
                 "status": "FAILED",
-                "details": "Build failed in /outputs/build/status.json. Fix or retry Repo Builder.",
+                "details": details,
             })
         else:
             any_pending = True
             sub_tasks.append({
-                "task_name": "Check Build Artifacts",
+                "task_name": "Check build artifacts",
                 "status": "PENDING",
-                "details": "Repository has not been built yet (/outputs/build/status.json missing or not READY). Dispatch repo-builder.",
+                "details": "Repository has not been built yet. Dispatch repo-builder.",
             })
 
-        # 3. Call Graph (Phase 2 input)
-        cg_ok = self.state.call_graph_path().exists() and self.state.call_flows_path().exists()
-        pending_files = self.state.pending_files()
-        if cg_ok:
-            top_preview = [f"{p['file']} ({p['flow_count']} flows, max_score={p['max_score']})" for p in pending_files[:10]]
-            rem = max(0, len(pending_files) - len(top_preview))
-            pending_note = f"Pending target files ({len(pending_files)} total): {top_preview}" + (f" (+{rem} more)" if rem else "")
+        # Check target files
+        pending_targets = self.state.pending_files()
+        if pending_targets:
+            any_pending = True
+            next_f = pending_targets[0]["file"]
             sub_tasks.append({
-                "task_name": "Check Call Graph",
+                "task_name": "Check target files",
+                "status": "PENDING",
+                "details": f"{len(pending_targets)} target files pending retrieval. Next: {next_f}.",
+            })
+        else:
+            sub_tasks.append({
+                "task_name": "Check target files",
                 "status": "SUCCESS",
-                "details": f"call-graph.json & call-flows.jsonl ready. {pending_note}",
-            })
-        else:
-            any_pending = True
-            sub_tasks.append({
-                "task_name": "Check Call Graph",
-                "status": "PENDING",
-                "details": "Static call-graph.json or call-flows.jsonl missing in /outputs/graph.",
+                "details": "All target files have been sliced into chunks.",
             })
 
-        # 4. Flows Retrieval (Phase 2 per chunk)
+        # Check flows retrieval
         chunks = self.state.get_chunks()
         if not chunks:
             any_pending = True
             sub_tasks.append({
-                "task_name": "Check Flows Retrieval",
+                "task_name": "Check flows retrieval",
                 "status": "PENDING",
-                "details": "No chunk_xxx analyzed yet. Pick next target file from Check Call Graph and dispatch repo-retriever.",
+                "details": "No chunk analyzed yet. Dispatch repo-retriever to retrieve candidate flows.",
             })
         else:
             for c in chunks:
                 flow_ids = [f.get("id") for f in c["flows"] if f.get("id")]
                 if c["retrieved"]:
                     sub_tasks.append({
-                        "task_name": "Check Flows Retrieval",
+                        "task_name": "Check flows retrieval",
                         "status": "SUCCESS",
-                        "details": f"Chunk {c['chunk_id']} ({c['target_file']}) retrieved {len(flow_ids)} flows {flow_ids} -> {self._container_path(c['output_file'])}.",
+                        "details": f"Chunk {c['chunk_id']} ({c['target_file']}) retrieved {len(flow_ids)} flows {flow_ids}.",
                     })
                 else:
                     any_pending = True
                     sub_tasks.append({
-                        "task_name": "Check Flows Retrieval",
+                        "task_name": "Check flows retrieval",
                         "status": "PENDING",
-                        "details": f"Chunk {c['chunk_id']} ({c['target_file']}) waiting for repo-retriever -> {self._container_path(c['input_file'])}.",
+                        "details": f"Chunk {c['chunk_id']} ({c['target_file']}) waiting for repo-retriever.",
                     })
 
-        # 5. Hypothesis & Debate (Phase 3 per retrieved flow)
+        # Check hypothesis
         approved, rejected = self.state.list_hypotheses()
         disputed = self.state.list_disputed_hypotheses()
         for c_id, flow in self.state.all_flows():
             fid = str(flow.get("id") or "")
             num = _num_suffix(fid)
             if num in approved:
-                trace = self._debate_trace(approved[num])
                 sub_tasks.append({
-                    "task_name": "Check Hypothesis",
+                    "task_name": "Check hypothesis",
                     "status": "SUCCESS",
-                    "details": f"{fid} ({c_id}) approved (VULNERABLE) -> /outputs/hypothesis/approved/hypothesis_{num}.json {trace}".strip(),
+                    "details": f"{fid} ({c_id}) VULNERABLE",
                 })
             elif num in disputed:
-                hyp = disputed[num]
-                trace = self._debate_trace(hyp)
-                owner = hyp.get("hypothesis_owner", "unknown")
                 sub_tasks.append({
-                    "task_name": "Check Hypothesis",
+                    "task_name": "Check hypothesis",
                     "status": "SUCCESS",
-                    "details": f"{fid} ({c_id}) DISPUTED (owner={owner}) -> /outputs/hypothesis/disputed/hypothesis_{num}.json {trace}. Run PoV to arbitrate.".strip(),
+                    "details": f"{fid} ({c_id}) DISPUTED. Run PoV to arbitrate.",
                 })
             elif num in rejected:
-                trace = self._debate_trace(rejected[num])
                 sub_tasks.append({
-                    "task_name": "Check Hypothesis",
+                    "task_name": "Check hypothesis",
                     "status": "SUCCESS",
-                    "details": f"{fid} ({c_id}) rejected -> /outputs/hypothesis/rejected/hypothesis_{num}.json {trace}".strip(),
+                    "details": f"{fid} ({c_id}) BENIGN",
                 })
             else:
                 any_pending = True
                 sub_tasks.append({
-                    "task_name": "Check Hypothesis",
+                    "task_name": "Check hypothesis",
                     "status": "PENDING",
                     "details": f"{fid} ({c_id}) not analyzed yet. Dispatch vuln-analyzer.",
                 })
 
-        # 6. PoV Verification & 7. Report (Phase 4 for APPROVED and DISPUTED flows)
+        # Check PoV
         pov_results = self.state.list_pov_results()
-        reports = {r["vuln_id"]: r for r in self.state.list_reports()}
         pov_candidates = {**approved, **disputed}
         for num, hyp in sorted(pov_candidates.items()):
             fid = str(hyp.get("flow_id") or f"flow_{num}")
@@ -217,45 +190,59 @@ class CoordinatorAgent(BaseAgent):
                 sub_tasks.append({
                     "task_name": "Check PoV",
                     "status": "SUCCESS",
-                    "details": f"{fid} PoV CONFIRMED -> /outputs/pov/pov_{num}/result_{num}.json.",
+                    "details": f"{fid} PoV CONFIRMED.",
                 })
-                vid = res.get("vuln_id")
-                rep_ok = vid and vid in reports and reports[vid]["report_exists"] and reports[vid]["pov_exists"]
-                if rep_ok:
-                    sub_tasks.append({
-                        "task_name": "Check Report",
-                        "status": "SUCCESS",
-                        "details": f"{fid} report exported -> /outputs/report/{vid}/report.md & pov.py.",
-                    })
-                else:
-                    any_pending = True
-                    sub_tasks.append({
-                        "task_name": "Check Report",
-                        "status": "PENDING",
-                        "details": f"{fid} PoV is CONFIRMED but GitHub Advisory report is missing. Call report for {fid}.",
-                    })
             elif p_status == "UNCONFIRMED":
                 sub_tasks.append({
                     "task_name": "Check PoV",
                     "status": "SUCCESS",
-                    "details": f"{fid} PoV UNCONFIRMED (not reproducible) -> /outputs/pov/pov_{num}/result_{num}.json.",
+                    "details": f"{fid} PoV UNCONFIRMED.",
                 })
             else:
                 any_pending = True
-                loc = "disputed" if in_disputed else "approved"
                 label = "Disputed" if in_disputed else "Approved"
                 sub_tasks.append({
                     "task_name": "Check PoV",
                     "status": "PENDING",
-                    "details": f"{label} {fid} (/outputs/hypothesis/{loc}/hypothesis_{num}.json) not verified by PoV yet. Dispatch pov-generator.",
+                    "details": f"{label} {fid} hypothesis {num} not verified by PoV yet. Dispatch pov-generator.",
+                })
+
+        # Check report
+        reports = {r["vuln_id"]: r for r in self.state.list_reports()}
+        for num, hyp in sorted(pov_candidates.items()):
+            res = pov_results.get(num, {})
+            p_status = str(res.get("status", "PENDING")).upper()
+            if p_status == "CONFIRMED":
+                fid = str(hyp.get("flow_id") or f"flow_{num}")
+                vid = res.get("vuln_id")
+                rep_ok = vid and vid in reports and reports[vid]["report_exists"] and reports[vid]["pov_exists"]
+                if rep_ok:
+                    sub_tasks.append({
+                        "task_name": "Check report",
+                        "status": "SUCCESS",
+                        "details": f"{fid} report exported.",
+                    })
+                else:
+                    any_pending = True
+                    sub_tasks.append({
+                        "task_name": "Check report",
+                        "status": "PENDING",
+                        "details": f"{fid} PoV is CONFIRMED but report is missing. Call report for {fid}.",
+                    })
+            elif p_status == "UNCONFIRMED":
+                fid = str(hyp.get("flow_id") or f"flow_{num}")
+                sub_tasks.append({
+                    "task_name": "Check report",
+                    "status": "SKIPPED",
+                    "details": f"{fid} PoV is UNCONFIRMED. Vulnerability not confirmed, do not author report.",
                 })
 
         if any_failed:
             overall = "FAILED"
-            summary = "Some critical tasks failed. Inspect failed sub_tasks and resolve them."
-        elif any_pending or (pending_files and not chunks):
+            summary = "Some critical tasks failed. Inspect failed sub tasks and resolve them."
+        elif any_pending:
             overall = "PENDING"
-            summary = "Some analysis tasks are not completed yet. Follow depth-first order (Build -> Retrieve -> Hypothesis/Debate -> PoV -> Report)."
+            summary = "Some analysis tasks are not completed yet. Follow depth-first order build -> retrieve -> hypothesis -> PoV -> report."
         else:
             overall = "SUCCESS"
             summary = "All planned tasks completed."
@@ -267,18 +254,40 @@ class CoordinatorAgent(BaseAgent):
             "sub_tasks": sub_tasks,
         }
 
-    # --- Sub-loop Runners ---
+    # Call builder
     def _run_builder(self, task: str) -> str:
         from agents import RepoBuilderAgent
         agent = RepoBuilderAgent(sandbox=self.sandbox, config_path=self.config_path, provider_cls=self.provider_cls)
+        status_file = self.state.build_dir / "status.json"
         res = agent.run(
             self.repo_path,
-            build_script=self._container_path(self.state.build_dir / "build.sh"),
-            status_file=self._container_path(self.state.build_dir / "status.json"),
+            build_script=self.state.to_container_path(self.state.build_dir / "build.sh"),
+            status_file=self.state.to_container_path(status_file),
             task_hint=task,
         )
-        return json.dumps({"agent": "repo-builder", "result": res}, ensure_ascii=False)
+        build_status = self.state.get_build_status()
+        b_status = str(build_status.get("status", "")).upper() if isinstance(build_status, dict) else ""
+        r_status = str(res.get("status", "")).upper() if isinstance(res, dict) else ""
 
+        is_failed = not res or r_status == "FAILED" or b_status == "FAILED" or (r_status != "READY" and b_status != "READY")
+        out = {"agent": "repo-builder", "result": res}
+
+        if is_failed:
+            explanation = agent.explain()
+            if explanation:
+                out["explanation"] = explanation
+                if status_file.exists():
+                    try:
+                        cur_st = json.loads(status_file.read_text(encoding="utf-8"))
+                        if isinstance(cur_st, dict) and not cur_st.get("reason"):
+                            cur_st["reason"] = explanation
+                            status_file.write_text(json.dumps(cur_st, indent=2, ensure_ascii=False), encoding="utf-8")
+                    except Exception:
+                        pass
+
+        return json.dumps(out, ensure_ascii=False)
+
+    # Call retriever
     def _run_retriever(self, args: dict) -> str:
         from agents import RepoRetrieverAgent
         agent = RepoRetrieverAgent(sandbox=self.sandbox, config_path=self.config_path, provider_cls=self.provider_cls)
@@ -290,11 +299,11 @@ class CoordinatorAgent(BaseAgent):
             out_file, flow_obj = self.state.find_flow(flow_id)
             if not flow_obj:
                 return json.dumps({"error": f"Flow {flow_id} not found in retrieved chunks."})
-            updated = agent.stitch_flow(
+            updated = agent.stitch(
                 self.repo_path,
                 flow_obj,
                 output_file=out_file,
-                call_graph_path=self._container_path(self.state.call_graph_path()),
+                call_graph_path=self.state.to_container_path(self.state.call_graph_path()),
                 hint=task_hint,
             )
             return json.dumps({"agent": "repo-retriever", "mode": "stitch", "flow": updated}, ensure_ascii=False)
@@ -302,19 +311,19 @@ class CoordinatorAgent(BaseAgent):
         if not target_file:
             pending = self.state.pending_files()
             if not pending:
-                return json.dumps({"agent": "repo-retriever", "status": "NO_PENDING_FILES"})
+                return json.dumps({"agent": "repo-retriever", "status": "NO PENDING FILES"})
             target_file = pending[0]["file"]
 
         chunk = self.state.create_chunk(target_file)
         if not chunk:
-            return json.dumps({"error": f"No call-flows found for target_file: {target_file}"})
+            return json.dumps({"error": f"No call-flows found for target file: {target_file}"})
 
-        flows = agent.run_chunk(
+        flows = agent.run(
             self.repo_path,
             target_file=chunk["target_file"],
-            chunk_input_path=self._container_path(chunk["input_file"]),
-            chunk_output_path=self._container_path(chunk["output_file"]),
-            call_graph_path=self._container_path(self.state.call_graph_path()),
+            chunk_input_path=self.state.to_container_path(chunk["input_file"]),
+            chunk_output_path=self.state.to_container_path(chunk["output_file"]),
+            call_graph_path=self.state.to_container_path(self.state.call_graph_path()),
             start_flow_idx=self.state.next_flow_index(),
             task_hint=task_hint,
         )
@@ -325,7 +334,8 @@ class CoordinatorAgent(BaseAgent):
             "retrieved_flows": [{"id": f.get("id"), "title": f.get("title"), "sink": f.get("sink")} for f in flows],
         }, ensure_ascii=False)
 
-    def _run_analyze_debate(self, args: dict) -> str:
+    # Call vuln-analyzer and vuln-debator
+    def _run_static_analysis(self, args: dict) -> str:
         from agents import VulnAnalyzerAgent, VulnDebatorAgent
         flow_id = args.get("flow_id")
         if not flow_id:
@@ -345,20 +355,22 @@ class CoordinatorAgent(BaseAgent):
         last_debate = None
         verdict = "BENIGN"
         decision = "REVISE"
-        debate_history = []
+        last_round = 1
 
+        # Debate rounds
         for round_idx in range(1, self.max_debate_rounds + 1):
+            last_round = round_idx
             last_hyp = a_agent.run(
                 self.repo_path,
                 flow_obj,
-                hypotheses=self._container_path(hyp_path),
+                hypotheses=self.state.to_container_path(hyp_path),
                 feedback=feedback,
             )
             if not isinstance(last_hyp, dict):
                 break
 
             raw_v = str(last_hyp.get("verdict", "")).strip().upper()
-            verdict = "VULNERABLE" if raw_v in ("VULN", "VULNERABLE") else "BENIGN"
+            verdict = "VULNERABLE" if raw_v == "VULNERABLE" else "BENIGN"
 
             last_debate = d_agent.run(
                 self.repo_path,
@@ -370,114 +382,64 @@ class CoordinatorAgent(BaseAgent):
                 break
 
             decision = str(last_debate.get("decision", "")).strip().upper()
-            debate_history.append({
-                "round": round_idx,
-                "analyzer_verdict": verdict,
-                "debator_decision": decision,
-                "debator_reason": last_debate.get("reason", ""),
-            })
 
             if decision == "ACCEPT":
                 is_vuln = (verdict == "VULNERABLE")
-                resolution = "CONSENSUS_VULNERABLE" if is_vuln else "CONSENSUS_BENIGN"
+                consensus_text = last_debate.get("reason", "")
                 payload = dict(last_hyp)
                 payload["verdict"] = verdict
-                payload["debate_consensus"] = last_debate.get("reason", "")
-                payload["hypothesis_owner"] = "vuln-analyzer"
-                payload["resolution"] = resolution
-                payload["debate_history"] = debate_history
+                payload["consensus"] = consensus_text
                 saved = self.state.save_hypothesis(flow_id, payload, status="approved" if is_vuln else "rejected")
                 return json.dumps({
                     "flow_id": flow_id,
-                    "status": "APPROVED_FOR_POV" if is_vuln else "REJECTED",
-                    "resolution": resolution,
-                    "hypothesis_owner": "vuln-analyzer",
-                    "analyzer_verdict": verdict,
-                    "debator_decision": "ACCEPT",
+                    "status": "APPROVED" if is_vuln else "REJECTED",
                     "round": round_idx,
-                    "saved_to": self._container_path(saved),
+                    "saved": self.state.to_container_path(saved),
                     "summary": payload.get("title", payload.get("description", "")),
-                    "debate_history": debate_history,
+                    "consensus": consensus_text,
                 }, ensure_ascii=False)
 
             feedback = last_debate
 
-        # Exhausted debate rounds without ACCEPT -> escalating claiming side into disputed/ for PoV arbitration
-        if isinstance(last_hyp, dict) and verdict == "VULNERABLE":
-            payload = dict(last_hyp)
-            payload["verdict"] = "VULNERABLE"
-            payload["hypothesis_owner"] = "vuln-analyzer"
-            payload["resolution"] = "DEADLOCK_ANALYZER_TO_POV"
-            payload["debate_history"] = debate_history
+        # Exhausted debate rounds
+        consensus_text = (last_debate or {}).get("reason", "") if isinstance(last_debate, dict) else ""
+
+        target_hyp = None
+        if verdict == "VULNERABLE":
+            target_hyp = last_hyp
+        elif decision == "REJECT" and isinstance(last_debate, dict):
+            target_hyp = last_debate.get("hypothesis") if isinstance(last_debate.get("hypothesis"), dict) else last_debate
+
+        if target_hyp and isinstance(target_hyp, dict) and target_hyp.get("verdict") == "VULNERABLE":
+            payload = dict(target_hyp)
+            payload["consensus"] = consensus_text
             saved = self.state.save_hypothesis(flow_id, payload, status="disputed")
             return json.dumps({
                 "flow_id": flow_id,
                 "status": "DISPUTED",
-                "resolution": "DEADLOCK_ANALYZER_TO_POV",
-                "hypothesis_owner": "vuln-analyzer",
-                "analyzer_verdict": verdict,
-                "debator_decision": decision,
-                "rounds": len(debate_history),
-                "saved_to": self._container_path(saved),
+                "round": last_round,
+                "saved": self.state.to_container_path(saved),
                 "summary": payload.get("title", payload.get("description", "")),
-                "debate_history": debate_history,
-                "next_action": f"Dispatch pov-generator with flow_id={flow_id} to verify empirically.",
+                "consensus": consensus_text,
+                "next_action": f"Dispatch pov-generator with flow id={flow_id} to verify empirically.",
             }, ensure_ascii=False)
 
-        if isinstance(last_debate, dict) and verdict == "BENIGN" and decision == "REJECT":
-            deb_hyp = last_debate.get("hypothesis") if isinstance(last_debate.get("hypothesis"), dict) else {}
-            payload = {
-                "id": deb_hyp.get("id") or flow_id,
-                "verdict": "VULNERABLE",
-                "cwe": deb_hyp.get("cwe") or [],
-                "title": deb_hyp.get("title") or f"Debator challenge on {flow_obj.get('title', flow_id)}",
-                "description": deb_hyp.get("description") or last_debate.get("reason", ""),
-                "source": deb_hyp.get("source") or flow_obj.get("source", {}),
-                "sink": deb_hyp.get("sink") or flow_obj.get("sink", {}),
-                "flow": deb_hyp.get("flow") or {"chain": flow_obj.get("chain", [])},
-                "preconditions": deb_hyp.get("preconditions") or [],
-                "hint": deb_hyp.get("hint") or "; ".join(last_debate.get("suggestions") or []),
-                "expected": deb_hyp.get("expected") or "",
-                "oracle": deb_hyp.get("oracle") or {},
-                "evidence": deb_hyp.get("evidence") or last_debate.get("evidence", []),
-                "remediation": deb_hyp.get("remediation") or "",
-                "hypothesis_owner": "vuln-debator",
-                "resolution": "DEADLOCK_DEBATOR_TO_POV",
-                "debate_history": debate_history,
-            }
-            saved = self.state.save_hypothesis(flow_id, payload, status="disputed")
-            return json.dumps({
-                "flow_id": flow_id,
-                "status": "DISPUTED",
-                "resolution": "DEADLOCK_DEBATOR_TO_POV",
-                "hypothesis_owner": "vuln-debator",
-                "analyzer_verdict": "BENIGN",
-                "debator_decision": "REJECT",
-                "rounds": len(debate_history),
-                "saved_to": self._container_path(saved),
-                "summary": payload.get("title", payload.get("description", "")),
-                "debate_history": debate_history,
-                "next_action": f"Dispatch pov-generator with flow_id={flow_id} to verify empirically.",
-            }, ensure_ascii=False)
-
+        # Neither side established a vulnerability hypothesis
         payload = dict(last_hyp or {"id": flow_id, "verdict": "BENIGN"})
-        payload["hypothesis_owner"] = "vuln-analyzer"
-        payload["resolution"] = "DEADLOCK_REVISE_BENIGN"
-        payload["debate_history"] = debate_history
+        payload["verdict"] = "BENIGN"
+        payload["consensus"] = consensus_text
         saved = self.state.save_hypothesis(flow_id, payload, status="rejected")
         return json.dumps({
             "flow_id": flow_id,
             "status": "REJECTED",
-            "resolution": "DEADLOCK_REVISE_BENIGN",
-            "hypothesis_owner": "vuln-analyzer",
-            "analyzer_verdict": verdict,
-            "debator_decision": decision,
-            "rounds": len(debate_history),
-            "saved_to": self._container_path(saved),
-            "debate_history": debate_history,
+            "round": last_round,
+            "saved": self.state.to_container_path(saved),
+            "summary": payload.get("title", payload.get("description", "")),
+            "consensus": consensus_text,
         }, ensure_ascii=False)
 
-    def _run_pov_subloop(self, args: dict) -> str:
+    # Call pov-generator and pov-verifier
+    def _run_dynamic_analysis(self, args: dict) -> str:
         from agents import PovGeneratorAgent, PovVerifierAgent
         flow_id = args.get("flow_id")
         if not flow_id:
@@ -492,8 +454,8 @@ class CoordinatorAgent(BaseAgent):
             return json.dumps({"error": f"No approved or disputed hypothesis found for {flow_id}."})
 
         script_path, result_path = self.state.pov_paths(flow_id)
-        c_script = self._container_path(script_path)
-        c_result = self._container_path(result_path)
+        c_script = self.state.to_container_path(script_path)
+        c_result = self.state.to_container_path(result_path)
         build_status = self.state.get_build_status()
 
         g_agent = PovGeneratorAgent(sandbox=self.sandbox, config_path=self.config_path, provider_cls=self.provider_cls)
@@ -503,7 +465,7 @@ class CoordinatorAgent(BaseAgent):
         last_verdict = {}
         final_res = {}
 
-        for attempt in range(1, self.max_pov_rounds + 1):
+        for attempt in range(1, self.max_exploit_rounds + 1):
             gen_res = g_agent.run(
                 self.repo_path,
                 hypothesis,
@@ -548,7 +510,7 @@ class CoordinatorAgent(BaseAgent):
                     "evidence": verdict.get("evidence", ""),
                 }
                 if promoted:
-                    out["promoted_to"] = self._container_path(promoted)
+                    out["promoted_to"] = self.state.to_container_path(promoted)
                 return json.dumps(out, ensure_ascii=False)
 
             feedback = verdict
@@ -559,38 +521,37 @@ class CoordinatorAgent(BaseAgent):
         out = {
             "flow_id": flow_id,
             "status": "UNCONFIRMED",
-            "attempts": self.max_pov_rounds,
-            "reason": last_verdict.get("reason", "PoV retries exhausted"),
+            "attempts": self.max_exploit_rounds,
+            "reason": last_verdict.get("reason", "Exploit retries exhausted"),
         }
         if promoted:
-            out["promoted_to"] = self._container_path(promoted)
+            out["promoted_to"] = self.state.to_container_path(promoted)
         return json.dumps(out, ensure_ascii=False)
 
-    # --- Action Handlers ---
+    # Handle coordinator action
     def _handle_action(self, action: str, payload: str) -> tuple[int, str]:
-        if action == "check_status":
-            return 0, json.dumps(self.check_status(), indent=2, ensure_ascii=False)
-
         args = self.extract_json(payload) if payload else None
         if not isinstance(args, dict):
             return 1, f"Invalid JSON payload for `{action}`."
 
+        # Call agent
         if action == "call_agent":
-            target = self._norm(args.get("agent") or args.get("agent_name") or args.get("name"))
-            if target in ("repobuilder", "builder", "repobuilderagent"):
+            target = str(args.get("agent") or "").strip().lower().replace("_", "-")
+            valid_agents = ["repo-builder", "repo-retriever", "vuln-analyzer", "vuln-debator", "pov-generator", "pov-verifier"]
+            if target == "repo-builder":
                 return 0, self._run_builder(args.get("task", ""))
-            if target in ("reporetriever", "retriever", "reporetrieveragent"):
+            if target == "repo-retriever":
                 return 0, self._run_retriever(args)
-            if target in ("vulnanalyzer", "analyzer", "vulnanalyzeragent", "vulndebator", "debator", "vulndebatoragent"):
-                return 0, self._run_analyze_debate(args)
-            if target in ("povgenerator", "generator", "povgeneratoragent", "povverifier", "verifier", "povverifieragent"):
-                return 0, self._run_pov_subloop(args)
-            return 1, f"Unknown agent `{args.get('agent')}`. Valid keys: {list(self.cards.keys())}"
+            if target in ("vuln-analyzer", "vuln-debator"):
+                return 0, self._run_static_analysis(args)
+            if target in ("pov-generator", "pov-verifier"):
+                return 0, self._run_dynamic_analysis(args)
+            return 1, f"Unknown agent `{args.get('agent')}`. Valid agents: {valid_agents}"
 
+        # Report vulns
         if action == "report":
             flow_id = str(args.get("flow_id") or "")
             content = str(args.get("content") or "")
-            num = _num_suffix(flow_id)
             script_path, result_path = self.state.pov_paths(flow_id)
             res = json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else {}
             if str(res.get("status", "")).upper() != "CONFIRMED":
@@ -602,25 +563,27 @@ class CoordinatorAgent(BaseAgent):
                 return 1, msg
             res["vuln_id"] = vid
             result_path.write_text(json.dumps(res, indent=2, ensure_ascii=False), encoding="utf-8")
-            return 0, json.dumps({"status": "REPORT_SAVED", "vuln_id": vid, "path": f"/outputs/report/{vid}/report.md"})
+            return 0, json.dumps({"status": "REPORT SAVED", "vuln_id": vid, "path": f"/outputs/report/{vid}/report.md"})
 
         return 1, f"Unhandled action `{action}`."
 
     def run(self, repo=None):
-        """Run Coordinator autonomous supervision loop until all tasks finish."""
         self.repo_path = str(repo or self.repo_path)
+
+        # Reset memory
         self.memory.clear()
         self.step = 0
         self.cmd_history = []
         self.start_time = time.time()
 
-        agents_desc = self.resolver.format_available_agents(self.cards)
+        # Build prompt
+        agents_desc = self.resolver.get_agents(self.cards)
         sys_prompt = self.render(self.system_prompt, available_agents=agents_desc)
         status_json = json.dumps(self.check_status(), indent=2, ensure_ascii=False)
         usr_prompt = self.render(
             self.user_prompt,
             repo=self.repo_path,
-            initial_status=status_json,
+            status=status_json,
         )
 
         self.messages = [
@@ -633,7 +596,7 @@ class CoordinatorAgent(BaseAgent):
             if extracted is None:
                 extracted = {"status": "COMPLETED", "summary": thought}
             self.log_action("finish")
-            self.log(thought=thought, action="finish", observation="Coordinator supervision finished")
+            self.log(thought=thought, action="finish", observation="Coordinator finished")
             return True, extracted
 
         return self.loop(finish=finish, default={"status": "STOPPED"}, action_handler=self._handle_action)

@@ -108,7 +108,13 @@ def setup_logger(log_file=None):
         log_path.parent.mkdir(parents=True, exist_ok=True)
         ansi_re = re.compile(r"\x1b\[[0-9;]*m")
         file_formatter = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%H:%M:%S")
-        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+
+        class FlushingFileHandler(logging.FileHandler):
+            def emit(self, record):
+                super().emit(record)
+                self.flush()
+
+        file_handler = FlushingFileHandler(log_path, encoding="utf-8")
         file_handler.addFilter(http_filter)
 
         orig_format = file_formatter.format
@@ -116,7 +122,7 @@ def setup_logger(log_file=None):
         file_handler.setFormatter(file_formatter)
         root.addHandler(file_handler)
 
-    logger = logging.getLogger("vulnalysis")
+    logger = logging.getLogger("militech")
     logger.setLevel(logging.INFO)
     return logger
 

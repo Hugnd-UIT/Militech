@@ -3,7 +3,7 @@ import logging
 import time
 from pathlib import Path
 
-log = logging.getLogger("vulnalysis")
+log = logging.getLogger("militech")
 
 PROMPT = """CRITICAL: Respond with TEXT ONLY. Do NOT call any tools or emit markdown bash blocks.
 

@@ -284,8 +284,8 @@ DANGEROUS_STEMS = (
 )
 
 
-def _clean_prod_paths(paths, is_non_prod_fn, limit=3):
-    """Trim leading non-production steps from path chains, dedup, and keep shortest."""
+def _clean_prod_paths(paths, is_non_prod_fn, limit=None):
+    """Trim leading non-production steps from path chains, dedup, and sort shortest-first."""
     seen = set()
     cleaned = []
     for p in paths or []:
@@ -308,7 +308,7 @@ def _clean_prod_paths(paths, is_non_prod_fn, limit=3):
             seen.add(key)
             cleaned.append(trimmed)
     cleaned.sort(key=len)
-    return cleaned[:limit]
+    return cleaned[:limit] if limit is not None else cleaned
 
 
 def filter(flows):

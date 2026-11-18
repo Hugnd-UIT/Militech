@@ -1,10 +1,10 @@
 {
   "name": "PoV Generator",
-  "description": "Crafts Python PoV scripts, runs them in sandbox, and iterates on verifier feedback.",
+  "description": "Crafts standalone reproduction scripts, executes them in sandbox, and iterates on verifier feedback.",
   "url": "https://localhost",
   "provider": {
-    "organization": "Hugnd-UIT",
-    "url": "https://github.com/Hugnd-UIT"
+    "organization": "Militech",
+    "url": "https://github.com/Hugnd-UIT/Militech"
   },
   "version": "1.0.0",
   "authentication": {
@@ -25,41 +25,26 @@
   "skills": [
     {
       "id": "pov_crafting",
-      "name": "Craft PoV Script",
-      "description": "Write standalone Python reproduction script targeting approved hypothesis preconditions.",
-      "tags": [
-        "exploit-synthesis",
-        "python",
-        "payload"
-      ],
+      "name": "Craft PoV",
+      "description": "Write standalone reproduction scripts in python, satisfying approved hypothesis preconditions and trigger inputs.",
       "examples": [
-        "Craft script_001.py in outputs/pov/pov_xxx/ to trigger the target sink"
+        "Craft reproduction script in outputs/pov/pov_xxx/ to trigger the target vulnerability"
       ]
     },
     {
       "id": "pov_executing",
-      "name": "Execute in Sandbox",
-      "description": "Run PoV script inside sandbox and save stdout, stderr, and exit code to result_001.json.",
-      "tags": [
-        "sandbox",
-        "telemetry",
-        "execution"
-      ],
+      "name": "Execute PoV",
+      "description": "Execute PoV reproduction script inside sandbox, capture runtime execution results and side-effects against oracle, and record telemetry to result_xxx.json.",
       "examples": [
-        "Run script_001.py and record runtime output and exit status"
+        "Execute reproduction script and record runtime verification evidence and status"
       ]
     },
     {
       "id": "pov_refining",
-      "name": "Refine PoV Payload",
-      "description": "Fix script syntax, runtime environment issues, or trigger payloads from verifier feedback.",
-      "tags": [
-        "refinement",
-        "retry",
-        "feedback"
-      ],
+      "name": "Refine PoV",
+      "description": "Fix script syntax, environment dependencies, payload structures, or request parameters based on verifier feedback.",
       "examples": [
-        "Adjust payload arguments or binary invocation based on verifier feedback"
+        "Adjust payload arguments, request headers, or execution parameters based on verifier feedback"
       ]
     }
   ]

@@ -1,10 +1,10 @@
 {
   "name": "PoV Verifier",
-  "description": "Independently runs PoV scripts in sandbox and verifies sink location and CWE mechanism.",
+  "description": "Independently executes PoV scripts in sandbox against target hypotheses to verify whether vulnerabilities are genuinely exploitable.",
   "url": "https://localhost",
   "provider": {
-    "organization": "Vulnalysis",
-    "url": "https://github.com/Hugnd-UIT/Vulnalysis"
+    "organization": "Militech",
+    "url": "https://github.com/Hugnd-UIT/Militech"
   },
   "version": "1.0.0",
   "authentication": {
@@ -25,41 +25,18 @@
   "skills": [
     {
       "id": "verify_evaluating",
-      "name": "Verify Dual Alignment",
-      "description": "Re-run PoV script directly in sandbox and check location match plus CWE mechanism match.",
-      "tags": [
-        "dual-alignment",
-        "sandbox-verify",
-        "oracle"
-      ],
+      "name": "Verify hypothesis",
+      "description": "Independently re-run PoV script in sandbox to verify whether runtime evidence confirms the vulnerability hypothesis.",
       "examples": [
-        "Execute script_001.py and confirm target sink crash or security oracle"
+        "Execute script_001.py and verify whether execution evidence matches the hypothesized vulnerability impact"
       ]
     },
     {
       "id": "verify_diagnosing",
-      "name": "Diagnose PoV Defects",
-      "description": "Separate script or environment errors from safe code and emit retry suggestions.",
-      "tags": [
-        "defect-triage",
-        "retry",
-        "feedback"
-      ],
+      "name": "Diagnose PoV",
+      "description": "Distinguish script or environment defects from genuine non-vulnerabilities and emit actionable retry suggestions.",
       "examples": [
         "Report missing runtime dependency or wrong argument back to PoV Generator"
-      ]
-    },
-    {
-      "id": "verify_reporting",
-      "name": "Report Final Verdict",
-      "description": "Emit final CONFIRMED or UNCONFIRMED verdict with runtime proof.",
-      "tags": [
-        "verdict",
-        "proof",
-        "audit"
-      ],
-      "examples": [
-        "Return CONFIRMED verdict with reproducible runtime evidence"
       ]
     }
   ]

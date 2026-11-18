@@ -3,8 +3,8 @@
   "description": "Stitches call graphs, resolves indirect calls, and extracts source-to-sink taint flows.",
   "url": "https://localhost",
   "provider": {
-    "organization": "Vulnalysis",
-    "url": "https://github.com/Hugnd-UIT/Vulnalysis"
+    "organization": "Militech",
+    "url": "https://github.com/Hugnd-UIT/Militech"
   },
   "version": "1.0.0",
   "authentication": {
@@ -25,26 +25,16 @@
   "skills": [
     {
       "id": "retrieve_stitching",
-      "name": "Stitch Indirect Calls",
+      "name": "Stitch indirect calls",
       "description": "Resolve function pointers, callbacks, and interfaces to connect broken call chains.",
-      "tags": [
-        "function-pointers",
-        "callbacks",
-        "call-graph"
-      ],
       "examples": [
         "Resolve struct function pointers and dynamic dispatch targets on disk"
       ]
     },
     {
       "id": "retrieve_extracting",
-      "name": "Extract Taint Flows",
+      "name": "Extract taint flows",
       "description": "Trace production entry points to critical operations and write taint-flow-xxx.jsonl.",
-      "tags": [
-        "taint-analysis",
-        "production-scope",
-        "dual-category"
-      ],
       "examples": [
         "Extract complete candidate flows from chunk-flow-xxx.jsonl to taint-flow-xxx.jsonl"
       ]

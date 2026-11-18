@@ -44,6 +44,15 @@ class State:
         self.first_pov_sec = None
         self.ensure_dirs()
 
+    def to_container_path(self, path: str | Path) -> str:
+        """Translate any path under outputs/ to /outputs/... for container execution."""
+        p = Path(path).resolve()
+        try:
+            rel = p.relative_to(self.outputs_path.resolve()).as_posix()
+            return f"/outputs/{rel}"
+        except ValueError:
+            return str(path)
+
     def ensure_dirs(self):
         """Create standard outputs/ directory layout cleanly."""
         for d in (

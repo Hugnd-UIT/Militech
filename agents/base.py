@@ -5,7 +5,7 @@ import sys
 import time
 from pathlib import Path
 import yaml
-from models.provider import OpenAI, Anthropic
+from models.provider import OpenAI
 from models import tracker
 from src.memory import Memory
 
@@ -89,17 +89,10 @@ class BaseAgent:
         self.cmd_history.append((cmd_norm, code))
 
         fail_count = sum(1 for c, r in self.cmd_history if c == cmd_norm and r != 0)
-        success_count = sum(1 for c, r in self.cmd_history if c == cmd_norm and r == 0)
-
         if fail_count >= 3:
             return True, f"Command '{cmd_norm}' failed {fail_count} times"
         elif fail_count == 2:
             return False, f"[WARNING: Command '{cmd_norm}' has failed 2 times. You MUST change your approach or fix prerequisites before running it again.]"
-
-        if success_count >= 4:
-            return True, f"Command '{cmd_norm}' was executed {success_count} times redundantly"
-        elif success_count >= 2:
-            return False, f"[WARNING: You have already executed '{cmd_norm}' successfully. If the file is long, use different commands (e.g. pagination with sed/tail, grep specific functions, or inspect source code) to read further instead of repeating this exact command.]"
 
         return False, ""
 
@@ -139,12 +132,12 @@ class BaseAgent:
             if action == "bash" and command:
                 norm = " ".join(command.strip().split())
                 dups = sum(1 for c, r in self.cmd_history if c == norm and r == 0)
-                if dups >= 5:
-                    self.log_error(f"Stuck: repeated command '{norm}'. Aborting {self.name}.")
+                if dups >= 4:
+                    self.log_error(f"Stuck: repeated command '{norm}' {dups} times. Aborting {self.name}.")
                     break
                 if dups >= 2:
                     self.cmd_history.append((norm, 0))
-                    hint = f"[COMMAND REJECTED: You already executed '{norm}'. Do not repeat it. If the file is long, change your command: use pagination (sed, tail, head) to read other lines, filter with grep, or inspect Python files directly.]"
+                    hint = f"[COMMAND REJECTED: You already executed '{norm}'. Do not repeat it. If the file is long, change your command: use pagination (sed, tail, head) to read other lines, filter with grep, or inspect files directly.]"
                     self.messages.append({"role": "user", "content": hint})
                     continue
 
@@ -203,8 +196,8 @@ class BaseAgent:
             return
         try:
             cleanup_cmd = (
-                "pkill -9 -f 'scripts.py' 2>/dev/null; "
-                "pkill -9 -f 'python.*scripts' 2>/dev/null; "
+                "pkill -9 -f 'script.*\\.py' 2>/dev/null; "
+                "pkill -9 -f 'python.*script' 2>/dev/null; "
                 "pkill -9 -f 'poc' 2>/dev/null || true"
             )
             self.sandbox.exec_run(["/bin/bash", "-c", cleanup_cmd])
@@ -319,11 +312,11 @@ class BaseAgent:
         import logging
         if thought:
             text = str(thought).strip().replace(chr(10), " ")
-            logging.getLogger("vulnalysis").info(f"[{self.name}] Thought: {text}")
+            logging.getLogger("militech").info(f"[{self.name}] Thought: {text}")
 
     def log_action(self, action, command=""):
         import logging
-        logger = logging.getLogger("vulnalysis")
+        logger = logging.getLogger("militech")
         cmd = str(command or "").strip().replace("\n", " ")
         if action == "bash":
             logger.info(f"  [{self.name}] Action: bash `{cmd}`")
@@ -334,7 +327,7 @@ class BaseAgent:
 
     def log_error(self, msg):
         import logging
-        logging.getLogger("vulnalysis").warning(f"  [{self.name}] Error: {msg}")
+        logging.getLogger("militech").warning(f"  [{self.name}] Error: {msg}")
 
     # Safety fallback prompt
     def get_safety_prompt(self):

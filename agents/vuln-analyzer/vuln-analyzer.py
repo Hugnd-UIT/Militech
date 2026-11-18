@@ -20,7 +20,20 @@ class VulnAnalyzerAgent(BaseAgent):
         hypotheses="hypotheses.json", 
         feedback=None
     ):
-        feedback_str = json.dumps(feedback, indent=2, ensure_ascii=False) if feedback else ""
+        if isinstance(feedback, dict):
+            clean_deb = {
+                "decision": feedback.get("decision", ""),
+                "reason": feedback.get("reason", ""),
+                "evidence": feedback.get("evidence", []),
+                "suggestions": feedback.get("suggestions", []),
+            }
+            if feedback.get("hypothesis"):
+                clean_deb["hypothesis"] = feedback.get("hypothesis")
+            feedback_str = json.dumps(clean_deb, indent=2, ensure_ascii=False)
+        elif feedback:
+            feedback_str = json.dumps(feedback, indent=2, ensure_ascii=False) if not isinstance(feedback, str) else feedback
+        else:
+            feedback_str = ""
 
         # Feedback
         if self.messages and feedback:
@@ -28,15 +41,18 @@ class VulnAnalyzerAgent(BaseAgent):
             self.cmd_history = []
             obs = self.render(
                 self.react_prompt,
-                coordinator=feedback_str,
+                debator=feedback_str,
                 code=0,
                 output="",
             )
             self.messages.append({"role": "user", "content": obs})
         else:
+            # Reset memory
             self.memory.clear()
             self.step = 0
             self.cmd_history = []
+
+            # Build prompt
             flow_str = json.dumps(taint_flow, indent=2, ensure_ascii=False)
             initial_task = self.render(
                 self.user_prompt,
@@ -55,14 +71,13 @@ class VulnAnalyzerAgent(BaseAgent):
                 code, content = self.execute(f"cat {hypotheses} 2>/dev/null")
                 if content:
                     extracted = self.extract_json(content)
+            
             if extracted and isinstance(extracted, dict):
                 v = str(extracted.get("verdict", "")).strip().upper()
-                if v in ("VULN", "VULNERABLE"):
-                    extracted["verdict"] = "VULNERABLE"
-                elif v == "BENIGN":
-                    extracted["verdict"] = "BENIGN"
                 ev = extracted.get("evidence")
-                if extracted.get("verdict") in ("VULNERABLE", "BENIGN") and isinstance(ev, list) and len(ev) > 0:
+                
+                if v in ("VULNERABLE", "BENIGN") and isinstance(ev, list) and len(ev) > 0:
+                    extracted["verdict"] = v
                     self.log_action("finish")
                     self.log(thought=thought, action="finish", observation="Analysis completed")
                     return True, extracted

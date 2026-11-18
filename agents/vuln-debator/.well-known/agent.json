@@ -1,10 +1,10 @@
 {
   "name": "Vuln Debator",
-  "description": "Adversarially challenges analyzer hypotheses by verifying guards and sanitizers on disk.",
+  "description": "Adversarially challenges analyzer hypotheses by verifying validation logic, authorization guards, and security controls on disk.",
   "url": "https://localhost",
   "provider": {
-    "organization": "Vulnalysis",
-    "url": "https://github.com/Hugnd-UIT/Vulnalysis"
+    "organization": "Militech",
+    "url": "https://github.com/Hugnd-UIT/Militech"
   },
   "version": "1.0.0",
   "authentication": {
@@ -25,28 +25,18 @@
   "skills": [
     {
       "id": "debate_challenging",
-      "name": "Challenge Hypothesis",
-      "description": "Inspect source code to uncover sanitizers, bounds checks, or unreachable paths with evidence.",
-      "tags": [
-        "adversarial-review",
-        "false-positive-filter",
-        "evidence"
-      ],
+      "name": "Challenge hypothesis",
+      "description": "Inspect source code to uncover validation logic, authorization checks, sanitizers, or unreachable paths with code evidence.",
       "examples": [
-        "Challenge hypothesis by citing upstream validation or bounds guard on disk"
+        "Challenge hypothesis by citing upstream validation, access controls, or unreachable conditions on disk"
       ]
     },
     {
       "id": "debate_conceding",
-      "name": "Concede Valid Bug",
-      "description": "Accept hypothesis immediately when code evidence proves the vulnerability is unguarded.",
-      "tags": [
-        "consensus",
-        "triage",
-        "verification"
-      ],
+      "name": "Concede valid vuln",
+      "description": "Accept hypothesis or overturn benign findings when code evidence proves genuine vulnerability.",
       "examples": [
-        "Accept finding once analyzer proves guard bypass with concrete code lines"
+        "Accept finding when code evidence proves vulnerability, or challenge benign verdict with concrete flaw proof"
       ]
     }
   ]

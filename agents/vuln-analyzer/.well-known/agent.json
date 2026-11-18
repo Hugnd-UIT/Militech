@@ -3,8 +3,8 @@
   "description": "Audits taint slices with code evidence, classifies CWEs, and formulates hypotheses.",
   "url": "https://localhost",
   "provider": {
-    "organization": "Vulnalysis",
-    "url": "https://github.com/Hugnd-UIT/Vulnalysis"
+    "organization": "Militech",
+    "url": "https://github.com/Hugnd-UIT/Militech"
   },
   "version": "1.0.0",
   "authentication": {
@@ -25,39 +25,24 @@
   "skills": [
     {
       "id": "analyze_auditing",
-      "name": "Audit Flow Slice",
+      "name": "Audit flows",
       "description": "Inspect guards, sanitizers, and bounds along slices and cite concrete file:line evidence.",
-      "tags": [
-        "code-audit",
-        "cwe",
-        "evidence"
-      ],
       "examples": [
         "Audit source-to-sink slice for logic or technical flaws with code citations"
       ]
     },
     {
       "id": "analyze_synthesizing",
-      "name": "Synthesize Hypothesis",
+      "name": "Synthesize hypothesis",
       "description": "Produce structured vulnerability hypotheses with preconditions, triggers, and oracles.",
-      "tags": [
-        "hypothesis",
-        "oracle",
-        "preconditions"
-      ],
       "examples": [
         "Formulate verifiable hypothesis JSON for downstream PoV testing"
       ]
     },
     {
       "id": "analyze_debating",
-      "name": "Defend Findings",
+      "name": "Defend findings",
       "description": "Defend candidate hypotheses against debator challenges using line-level code proof.",
-      "tags": [
-        "debate",
-        "defense",
-        "triage"
-      ],
       "examples": [
         "Answer debator challenges with concrete bypass proof or concede benign"
       ]
