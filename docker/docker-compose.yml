@@ -9,16 +9,20 @@ services:
     cap_add:
       - NET_ADMIN
       - SYS_PTRACE
+    
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONPATH=/app
       - MILITECH_CONTAINER_NAME=militech-${REPO_SLUG:-target}
+    
     volumes:
       - ${HOST_OUTPUTS:-../outputs/target}:/outputs:rw
       - ${HOST_CONFIG:-../config/config.yml}:/app/config/config.yml:ro
+    
     command:
       - "${TARGET:?Set TARGET=<git_url>}"
       - "--branch"
