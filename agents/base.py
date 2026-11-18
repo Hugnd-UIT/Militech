@@ -317,13 +317,13 @@ class BaseAgent:
     def log_action(self, action, command=""):
         import logging
         logger = logging.getLogger("militech")
-        cmd = str(command or "").strip().replace("\n", " ")
+        cmd = " ".join(str(command or "").split())
         if action == "bash":
             logger.info(f"  [{self.name}] Action: bash `{cmd}`")
         elif action == "finish":
             logger.info(f"  [{self.name}] Action: finish")
         elif action:
-            logger.info(f"  [{self.name}] Action: {action}" + (f" `{cmd[:120]}`" if cmd else ""))
+            logger.info(f"  [{self.name}] Action: {action}" + (f" `{cmd}`" if cmd else ""))
 
     def log_error(self, msg):
         import logging
