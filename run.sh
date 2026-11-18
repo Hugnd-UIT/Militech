@@ -10,11 +10,10 @@ IMAGE="militech:latest"
 
 TARGET=""
 BRANCH=""
-FOLLOW=0
 REBUILD=0
 
 usage() {
-    echo "Usage: bash run.sh <owner/repo | git_url | local_path> [--branch <tag>] [--follow|-f] [--rebuild]"
+    echo "Usage: bash run.sh <owner/repo | git_url | local_path> [--branch <tag>] [--rebuild]"
     exit "${1:-1}"
 }
 
@@ -27,10 +26,6 @@ while [[ $# -gt 0 ]]; do
             BRANCH="${2:-}"
             [[ -n "$BRANCH" ]] || usage
             shift 2
-            ;;
-        --follow|-f)
-            FOLLOW=1
-            shift
             ;;
         --rebuild)
             REBUILD=1
@@ -91,9 +86,9 @@ if "$DOCKER_BIN" ps --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
 fi
 
 if [[ -d "$TARGET" ]]; then
-    if [[ "$REBUILD" -eq 1 ]] || ! "$DOCKER_BIN" image inspect "$IMAGE" >/dev/null 2>&1; then
-        "$DOCKER_BIN" build -t "$IMAGE" -f "$SCRIPT_DIR/docker/Dockerfile" "$SCRIPT_DIR"
-    fi
+    BUILD_ARGS=()
+    [[ "$REBUILD" -eq 1 ]] && BUILD_ARGS+=(--no-cache)
+    "$DOCKER_BIN" build "${BUILD_ARGS[@]}" -t "$IMAGE" -f "$SCRIPT_DIR/docker/Dockerfile" "$SCRIPT_DIR"
     "$DOCKER_BIN" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
     ABS_TARGET="$(cd "$TARGET" && pwd)"
     DOCKER_ARGS=(
@@ -108,17 +103,12 @@ if [[ -d "$TARGET" ]]; then
     [[ -f "$SCRIPT_DIR/config/config.yml" ]] && DOCKER_ARGS+=(-v "$HOST_CONFIG:/app/config/config.yml:ro")
     "$DOCKER_BIN" "${DOCKER_ARGS[@]}" "$IMAGE" /host_repo >/dev/null
 else
-    COMPOSE_ARGS=(-p "$CONTAINER_NAME" -f "$COMPOSE_FILE" up -d)
-    if [[ "$REBUILD" -eq 1 ]] || ! "$DOCKER_BIN" image inspect "$IMAGE" >/dev/null 2>&1; then
-        COMPOSE_ARGS+=(--build)
+    if [[ "$REBUILD" -eq 1 ]]; then
+        "$DOCKER_BIN" compose -p "$CONTAINER_NAME" -f "$COMPOSE_FILE" build --no-cache
     fi
-    "$DOCKER_BIN" compose "${COMPOSE_ARGS[@]}"
+    "$DOCKER_BIN" compose -p "$CONTAINER_NAME" -f "$COMPOSE_FILE" up -d --build
 fi
 
 echo "[+] Started $CONTAINER_NAME in background"
 echo "    Logs: docker logs -f $CONTAINER_NAME"
 echo "    Stop: docker stop $CONTAINER_NAME"
-
-if [[ "$FOLLOW" -eq 1 ]]; then
-    exec "$DOCKER_BIN" logs -f "$CONTAINER_NAME"
-fi
