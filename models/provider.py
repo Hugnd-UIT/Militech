@@ -110,6 +110,9 @@ class OpenAI:
                 pass
 
         # Send request
+        if "timeout" not in call_kwargs:
+            call_kwargs["timeout"] = 60.0
+
         def _send():
             return self.client.chat.completions.create(
                 model=self.model,
@@ -247,6 +250,9 @@ class Anthropic:
                 last_content[-1]["cache_control"] = {"type": "ephemeral"}
 
         # Send request
+        if "timeout" not in call_kwargs:
+            call_kwargs["timeout"] = 60.0
+
         def _send():
             return self.client.messages.create(
                 model=self.model,
