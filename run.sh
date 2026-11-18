@@ -77,6 +77,7 @@ OUT_DIR="$SCRIPT_DIR/outputs/$REPO_NAME"
 mkdir -p "$OUT_DIR"
 
 export TARGET BRANCH REPO_NAME REPO_SLUG
+export HOST_ROOT="$(to_docker_path "$SCRIPT_DIR")"
 export HOST_OUTPUTS="$(to_docker_path "$OUT_DIR")"
 export HOST_CONFIG="$(to_docker_path "$SCRIPT_DIR/config/config.yml")"
 
@@ -85,10 +86,14 @@ if "$DOCKER_BIN" ps --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
     exit 1
 fi
 
-if [[ -d "$TARGET" ]]; then
+if [[ "$REBUILD" -eq 1 ]] || ! "$DOCKER_BIN" image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "[*] Image $IMAGE not found or --rebuild specified. Building..."
     BUILD_ARGS=()
     [[ "$REBUILD" -eq 1 ]] && BUILD_ARGS+=(--no-cache)
     "$DOCKER_BIN" build "${BUILD_ARGS[@]}" -t "$IMAGE" -f "$SCRIPT_DIR/docker/Dockerfile" "$SCRIPT_DIR"
+fi
+
+if [[ -d "$TARGET" ]]; then
     "$DOCKER_BIN" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
     ABS_TARGET="$(cd "$TARGET" && pwd)"
     DOCKER_ARGS=(
@@ -97,16 +102,14 @@ if [[ -d "$TARGET" ]]; then
         --cap-add=NET_ADMIN --cap-add=SYS_PTRACE
         --add-host=host.docker.internal:host-gateway
         -e "CONTAINER_NAME=$CONTAINER_NAME"
+        -v "$HOST_ROOT:/app:rw"
         -v "$HOST_OUTPUTS:/outputs:rw"
         -v "$(to_docker_path "$ABS_TARGET"):/host_repo:ro"
     )
     [[ -f "$SCRIPT_DIR/config/config.yml" ]] && DOCKER_ARGS+=(-v "$HOST_CONFIG:/app/config/config.yml:ro")
     "$DOCKER_BIN" "${DOCKER_ARGS[@]}" "$IMAGE" /host_repo >/dev/null
 else
-    if [[ "$REBUILD" -eq 1 ]]; then
-        "$DOCKER_BIN" compose -p "$CONTAINER_NAME" -f "$COMPOSE_FILE" build --no-cache
-    fi
-    "$DOCKER_BIN" compose -p "$CONTAINER_NAME" -f "$COMPOSE_FILE" up -d --build
+    "$DOCKER_BIN" compose -p "$CONTAINER_NAME" -f "$COMPOSE_FILE" up -d
 fi
 
 echo "[+] Started $CONTAINER_NAME in background"
