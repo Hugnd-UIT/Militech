@@ -12,6 +12,7 @@ agent:
     - Use `bash` to trace entry points and extract candidate taint flows.
     - Use `finish` ONLY when candidate flows are verified and recorded.
     - You MUST strictly adhere to the JSON schema when outputting finish.
+    - You MUST immediately append taint flows to `{{taint_flows}}` once you find them. NEVER wait until the end to write them all.
 
     ## Context
     - Target repository: {{repo}}
