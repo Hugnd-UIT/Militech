@@ -77,9 +77,7 @@ OUT_DIR="$SCRIPT_DIR/outputs/$REPO_NAME"
 mkdir -p "$OUT_DIR" 2>/dev/null || true
 
 export TARGET BRANCH REPO_NAME REPO_SLUG
-export HOST_AGENTS="$(to_docker_path "$SCRIPT_DIR/agents")"
-export HOST_SRC="$(to_docker_path "$SCRIPT_DIR/src")"
-export HOST_UTILS="$(to_docker_path "$SCRIPT_DIR/utils")"
+export ROOT_DIR="$(to_docker_path "$SCRIPT_DIR")"
 export HOST_OUTPUTS="$(to_docker_path "$OUT_DIR")"
 export HOST_CONFIG="$(to_docker_path "$SCRIPT_DIR/config/config.yml")"
 
@@ -97,24 +95,28 @@ fi
 
 "$DOCKER_BIN" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
+DOCKER_ARGS=(
+    run -d
+    --name "$CONTAINER_NAME"
+    --cap-add=NET_ADMIN --cap-add=SYS_PTRACE
+    --add-host=host.docker.internal:host-gateway
+    -e PYTHONUNBUFFERED=1
+    -e PYTHONDONTWRITEBYTECODE=1
+    -e PYTHONPATH=/app
+    -e "CONTAINER_NAME=$CONTAINER_NAME"
+    -v "$ROOT_DIR:/app:rw"
+    -v "$HOST_OUTPUTS:/outputs:rw"
+)
+[[ -f "$SCRIPT_DIR/config/config.yml" ]] && DOCKER_ARGS+=(-v "$HOST_CONFIG:/app/config/config.yml:ro")
+
 if [[ -d "$TARGET" ]]; then
     ABS_TARGET="$(cd "$TARGET" && pwd)"
-    DOCKER_ARGS=(
-        run -d
-        --name "$CONTAINER_NAME"
-        --cap-add=NET_ADMIN --cap-add=SYS_PTRACE
-        --add-host=host.docker.internal:host-gateway
-        -e "CONTAINER_NAME=$CONTAINER_NAME"
-        -v "$HOST_AGENTS:/app/agents:rw"
-        -v "$HOST_SRC:/app/src:rw"
-        -v "$HOST_UTILS:/app/utils:rw"
-        -v "$HOST_OUTPUTS:/outputs:rw"
-        -v "$(to_docker_path "$ABS_TARGET"):/host_repo:ro"
-    )
-    [[ -f "$SCRIPT_DIR/config/config.yml" ]] && DOCKER_ARGS+=(-v "$HOST_CONFIG:/app/config/config.yml:ro")
+    DOCKER_ARGS+=(-v "$(to_docker_path "$ABS_TARGET"):/host_repo:ro")
     "$DOCKER_BIN" "${DOCKER_ARGS[@]}" "$IMAGE" /host_repo >/dev/null
 else
-    "$DOCKER_BIN" compose -p "$CONTAINER_NAME" -f "$COMPOSE_FILE" up -d
+    CMD_ARGS=("$TARGET")
+    [[ -n "$BRANCH" ]] && CMD_ARGS+=(--branch "$BRANCH")
+    "$DOCKER_BIN" "${DOCKER_ARGS[@]}" "$IMAGE" "${CMD_ARGS[@]}" >/dev/null
 fi
 
 echo "[+] Started $CONTAINER_NAME in background"
