@@ -139,7 +139,7 @@ agent:
     You MUST call `finish` within the next {{remaining}} rounds or your analysis will be cut short. 
     Wrap up your reasoning now and call `finish`.
 
-  step-limit: 15
+  step-limit: 50
   cost-limit: 15
 
 environment:

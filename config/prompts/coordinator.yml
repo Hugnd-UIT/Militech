@@ -151,7 +151,7 @@ agent:
     You have only {{remaining}} turns left out of {{total}}.
     Wrap up remaining pending reports and call `finish`.
 
-  step-limit: 80
+  step-limit: 200
   cost-limit: 15
 
 environment:
