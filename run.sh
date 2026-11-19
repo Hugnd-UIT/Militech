@@ -74,9 +74,12 @@ REPO_SLUG="$(echo "$REPO_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_.-
 CONTAINER_NAME="militech-$REPO_SLUG"
 
 OUT_DIR="$SCRIPT_DIR/outputs/$REPO_NAME"
-mkdir -p "$OUT_DIR"
+mkdir -p "$OUT_DIR" 2>/dev/null || true
 
 export TARGET BRANCH REPO_NAME REPO_SLUG
+export HOST_AGENTS="$(to_docker_path "$SCRIPT_DIR/agents")"
+export HOST_SRC="$(to_docker_path "$SCRIPT_DIR/src")"
+export HOST_UTILS="$(to_docker_path "$SCRIPT_DIR/utils")"
 export HOST_OUTPUTS="$(to_docker_path "$OUT_DIR")"
 export HOST_CONFIG="$(to_docker_path "$SCRIPT_DIR/config/config.yml")"
 
@@ -102,6 +105,9 @@ if [[ -d "$TARGET" ]]; then
         --cap-add=NET_ADMIN --cap-add=SYS_PTRACE
         --add-host=host.docker.internal:host-gateway
         -e "CONTAINER_NAME=$CONTAINER_NAME"
+        -v "$HOST_AGENTS:/app/agents:rw"
+        -v "$HOST_SRC:/app/src:rw"
+        -v "$HOST_UTILS:/app/utils:rw"
         -v "$HOST_OUTPUTS:/outputs:rw"
         -v "$(to_docker_path "$ABS_TARGET"):/host_repo:ro"
     )

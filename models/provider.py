@@ -40,8 +40,8 @@ def retry(call_fn, agent_name="", max_retries=8, base_delay=4.0):
             delay = min(60.0, base_delay * (2 ** min(attempt, 4)))
             status_str = f" [HTTP {status_code}]" if status_code else ""
             log.warning(
-                f"[{agent_name or 'provider'}] LLM call error{status_str} ({err_name}: {err_msg[:120]}). "
-                f"Retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})..."
+                f"[{agent_name or 'provider'}] LLM call error{status_str} {err_msg[:120]}. "
+                f"Retrying in {delay:.1f}s..."
             )
             time.sleep(delay)
 

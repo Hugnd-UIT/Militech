@@ -144,7 +144,7 @@ class RepoRetrieverAgent(BaseAgent):
             if not extracted:
                 extracted = self._read_flows(chunk_output_path)
             
-            if extracted is None:
+            if not extracted:
                 return False, None
             
             items = extracted if isinstance(extracted, list) else [extracted]
@@ -154,6 +154,10 @@ class RepoRetrieverAgent(BaseAgent):
                 norm = self._normalize_flow(x)
                 if norm:
                     collected.append(norm)
+
+            if not collected:
+                return False, None
+
             self.log_action("finish")
             self.log(thought=thought, action="finish", observation=f"Chunk retrieval completed ({len(collected)} flows)")
             

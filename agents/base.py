@@ -231,16 +231,27 @@ class BaseAgent:
             fence_match = re.search(rf"```{re.escape(act)}\b[ \t\r\n]*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
             if fence_match:
                 return thought, act, fence_match.group(1).strip()
+
+            call_match = re.search(rf"(?:(?:ACTION|Action)[\s:\-]+)?{re.escape(act)}\b[\s:\-]*(\{{[\s\S]*\}})", text, re.IGNORECASE)
+            if call_match:
+                payload = call_match.group(1).strip()
+                if thought:
+                    thought = re.sub(rf"(?:(?:ACTION|Action)[\s:\-]+)?{re.escape(act)}\b[\s:\-]*\{{[\s\S]*\}}", "", thought, flags=re.IGNORECASE).strip()
+                return thought, act, payload
+
             if re.search(rf"(?:ACTION|Action)[\s:\-]+{re.escape(act)}\b", text, re.IGNORECASE):
                 any_block = re.search(r"```[a-zA-Z0-9_\-]*\s*(.*?)\s*```", text, re.DOTALL)
                 return thought, act, (any_block.group(1).strip() if any_block else "")
+
             if act == "check_status" and re.search(r"^\s*check_status\s*$", text, re.MULTILINE | re.IGNORECASE):
                 return thought, act, ""
+
         bash_match = re.search(r"```(?:bash|sh|shell)(?:[ \t\r\n]+)(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
         if not bash_match:
             generic = re.search(r"```\s*((?:#!\/bin\/bash|\$|cat|grep|ls|find|gcc|clang|make|python3?|curl|echo|head|tail|mkdir|cd|\.\/)[\s\S]*?)\s*```", text, re.DOTALL)
             if generic:
                 bash_match = generic
+
         if not bash_match and re.search(r"(?:ACTION|Action)[\s:\-]+(?:bash|shell)\b", text, re.IGNORECASE):
             any_block = re.search(r"```[a-zA-Z0-9_\-]*\s*(.*?)\s*```", text, re.DOTALL)
             if any_block:
@@ -257,7 +268,15 @@ class BaseAgent:
         elif re.search(r"^\s*finish\s*$", text, re.MULTILINE | re.IGNORECASE) or re.search(r"(?:ACTION|Action)[\s:\-]+finish\b", text, re.IGNORECASE) or re.search(r"\bfinish\s*$", text.strip(), re.IGNORECASE):
             action = "finish"
         elif self.extract_json(text) is not None:
-            action = "finish"
+            extracted = self.extract_json(text)
+            if isinstance(extracted, dict) and "agent" in extracted and "call_agent" in getattr(self, "extra_actions", ()):
+                action = "call_agent"
+                command = json.dumps(extracted, ensure_ascii=False)
+                if thought:
+                    thought = re.sub(r"\{[\s\S]*\}", "", thought).strip()
+                    thought = re.sub(r"(?:(?:ACTION|Action)[\s:\-]+)?call_agent\b[\s:\-]*", "", thought, flags=re.IGNORECASE).strip()
+            else:
+                action = "finish"
 
         return thought, action, command
 
