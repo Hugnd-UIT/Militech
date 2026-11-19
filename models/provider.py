@@ -91,11 +91,13 @@ class OpenAI:
         else:
             self.model = ""
 
+        self.timeout = float(provider_cfg.get("timeout", 180.0))
+
         # Initialize client
         self.client = _OpenAIClient(
             api_key=self.key or "none",
             base_url=self.url,
-            timeout=90.0,
+            timeout=self.timeout,
             max_retries=0,
         )
 
@@ -111,7 +113,7 @@ class OpenAI:
 
         # Send request
         if "timeout" not in call_kwargs:
-            call_kwargs["timeout"] = 60.0
+            call_kwargs["timeout"] = self.timeout
 
         def _send():
             return self.client.chat.completions.create(
@@ -195,11 +197,13 @@ class Anthropic:
         else:
             self.model = ""
 
+        self.timeout = float(provider_cfg.get("timeout", 180.0))
+
         # Initialize client
         self.client = _AnthropicClient(
             api_key=self.key or "none",
             base_url=self.url,
-            timeout=90.0,
+            timeout=self.timeout,
             max_retries=0,
         )
 
@@ -251,7 +255,7 @@ class Anthropic:
 
         # Send request
         if "timeout" not in call_kwargs:
-            call_kwargs["timeout"] = 60.0
+            call_kwargs["timeout"] = self.timeout
 
         def _send():
             return self.client.messages.create(
