@@ -12,8 +12,8 @@ agent:
 
   user-prompt: |
     ## Rules - STRICT
-    - Use `call_agent` to delegate tasks
-    - Use `bash` to inspect artifacts or code.
+    - Use `call_agent` to delegate tasks.
+    - Use `bash` to inspect artifacts, code, and evidence.
     - Use `report` ONLY when a vulnerability is `CONFIRMED`.
     - Use `finish` ONLY when all chunks are analyzed and no pending tasks remain.
     - NEVER modify repository source code or create/edit artifacts directly via bash.
@@ -47,8 +47,11 @@ agent:
         - If `UNCONFIRMED`: Disputed hypotheses are demoted to rejected.
 
     5. **PHASE 5 - Report (`Check Report`)**
-       - If `Check report` is `PENDING` it means PoV is `CONFIRMED`, write a report.
-       - If `Check report` is `SKIPPED` it means PoV is `UNCONFIRMED` or `BENIGN`, do not write a report.
+       - If `Check report` is `PENDING`, write a report:
+         1. Read hypothesis: `cat /outputs/hypothesis/approved/hypothesis_xxx.json` to extract CWE ID, root cause, source-to-sink, and preconditions.
+         2. Read PoV script: `cat /outputs/pov/pov_xxx/script_xxx.py` to extract cyber kill chain, exploit payload, and exploit mechanism.
+         3. Read PoV result: `cat /outputs/pov/pov_xxx/result_xxx.json` to extract results from PoV.
+       - If `Check report` is `SKIPPED`, do not write a report.
 
     6. **Finish**
        - ONLY when all chunk flows has been analyzed and no pending tasks remain then emit `finish`.
@@ -73,10 +76,24 @@ agent:
     ### `report`
 
     ```report
-    {
-      "flow_id": "<string: flow_xxx>",
-      "content": "# [<CWE-ID>] <Title>\n\n### Summary\n<summary about vulnerability>\n\n### Details\n<root cause, source-to-sink, code, ...>\n\n### PoC\n<reproduction and validation PoV details>\n\n### Impact\n<details of CVSS>\n\n### Remediation\n<how to patch the vulnerability>"
-    }
+    flow_id: flow_xxx
+
+    # [<CWE-ID>] <Title>
+
+    ### Summary
+    <concise overview of the vulnerability>
+
+    ### Details
+    <root cause, source-to-sink flow, preconditions, affected file and line>
+
+    ### PoC
+    <cyber kill chain reproduction: payload structure, execution command, and exact runtime execution telemetry>
+
+    ### Impact
+    <security consequences, CVSS justification, and potential attacker abuse>
+
+    ### Remediation
+    <actionable fix or patch recommendation>
     ```
 
     ### `bash`

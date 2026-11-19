@@ -282,6 +282,12 @@ class BaseAgent:
                     return parsed
             except Exception:
                 pass
+            try:
+                parsed = json.loads(raw, strict=False)
+                if isinstance(parsed, (dict, list)):
+                    return parsed
+            except Exception:
+                pass
             return None
 
         match = re.search(r"```(?:json|finish|yaml)?\s*([\{\[][\s\S]*?[\}\]])\s*```", text, re.DOTALL | re.IGNORECASE)

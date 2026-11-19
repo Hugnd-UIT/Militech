@@ -1,4 +1,5 @@
 import json
+import re
 import time
 
 from agents.base import BaseAgent
@@ -546,6 +547,31 @@ class CoordinatorAgent(BaseAgent):
 
     # Handle coordinator action
     def _handle_action(self, action: str, payload: str) -> tuple[int, str]:
+        if action == "report":
+            if not payload or not payload.strip():
+                return 1, "Empty report payload."
+
+            m = re.search(r"^\s*flow_id:\s*(flow_\w+|\d+)", payload, re.IGNORECASE | re.MULTILINE)
+            if not m:
+                return 1, "Missing `flow_id: flow_xxx` header in report action."
+            flow_id = m.group(1).strip()
+            if not flow_id.startswith("flow_") and flow_id.isdigit():
+                flow_id = f"flow_{int(flow_id):03d}"
+
+            content = re.sub(r"^\s*flow_id:\s*[^\n]+\n*", "", payload, flags=re.IGNORECASE).strip()
+            script_path, result_path = self.state.pov_paths(flow_id)
+            res = json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else {}
+            if str(res.get("status", "")).upper() != "CONFIRMED":
+                return 1, f"Cannot write report: {flow_id} PoV status is not CONFIRMED."
+
+            vid = res.get("vuln_id") or self.state.next_vuln_id()
+            ok, msg = self.state.save_report(content, script_path, vuln_id=vid)
+            if not ok:
+                return 1, msg
+            res["vuln_id"] = vid
+            result_path.write_text(json.dumps(res, indent=2, ensure_ascii=False), encoding="utf-8")
+            return 0, json.dumps({"status": "REPORT SAVED", "vuln_id": vid, "path": f"/outputs/report/{vid}/report.md"})
+
         args = self.extract_json(payload) if payload else None
         if not isinstance(args, dict):
             return 1, f"Invalid JSON payload for `{action}`."
@@ -563,23 +589,6 @@ class CoordinatorAgent(BaseAgent):
             if target in ("pov-generator", "pov-verifier"):
                 return 0, self._run_dynamic_analysis(args)
             return 1, f"Unknown agent `{args.get('agent')}`. Valid agents: {valid_agents}"
-
-        # Report vulns
-        if action == "report":
-            flow_id = str(args.get("flow_id") or "")
-            content = str(args.get("content") or "")
-            script_path, result_path = self.state.pov_paths(flow_id)
-            res = json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else {}
-            if str(res.get("status", "")).upper() != "CONFIRMED":
-                return 1, f"Cannot write report: {flow_id} PoV status is not CONFIRMED."
-
-            vid = res.get("vuln_id") or self.state.next_vuln_id()
-            ok, msg = self.state.save_report(content, script_path, vuln_id=vid)
-            if not ok:
-                return 1, msg
-            res["vuln_id"] = vid
-            result_path.write_text(json.dumps(res, indent=2, ensure_ascii=False), encoding="utf-8")
-            return 0, json.dumps({"status": "REPORT SAVED", "vuln_id": vid, "path": f"/outputs/report/{vid}/report.md"})
 
         return 1, f"Unhandled action `{action}`."
 
