@@ -104,12 +104,6 @@ class OpenAI:
 
     def chat(self, messages, **kwargs):
         call_kwargs = dict(kwargs)
-        if self.url and any(h in self.url for h in ("google", "localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal")):
-            try:
-                from utils import apply
-                call_kwargs = apply(call_kwargs)
-            except Exception:
-                pass
 
         # Send request
         if "timeout" not in call_kwargs:

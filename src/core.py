@@ -11,7 +11,7 @@ if str(_root) not in sys.path:
 
 from docker.sandbox import Sandbox
 from src.state import State
-from utils.logger import setup_logger
+from utils.log import setup_logger
 
 
 def _is_git_url(target: str) -> bool:

@@ -13,7 +13,7 @@ if str(root) not in sys.path:
 import graphify
 from agents import RepoRetrieverAgent
 from src.dedup import filter as dedup
-from utils.logger import setup_logger
+from utils.log import setup_logger
 
 log = setup_logger()
 
