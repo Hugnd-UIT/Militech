@@ -1,155 +1,11 @@
-def _match_op(op, ops):
-    if not op:
-        return False
-    op_lower = op.lower()
-    for k in ops:
-        if k == op_lower or op_lower.endswith(f".{k}") or op_lower.endswith(f"::{k}") or f"_{k}" in op_lower or f"{k}_" in op_lower:
-            return True
-    return False
-
-
-def score(flow):
-    if "primary_vector" in flow:
-        return flow["primary_vector"].get("score", 0)
-    sink = flow.get("sink", {}) or flow.get("dst", {}) or {}
-    src = flow.get("source", {}) or flow.get("src", {}) or {}
-    paths = flow.get("paths", [[]])
-    chain = flow.get("chain") or flow.get("flow", {}).get("chain", []) or (paths[0] if paths and isinstance(paths[0], list) else [])
-
-    op = str(sink.get("func") or sink.get("function") or (chain[-1].split(":")[-1] if chain else "")).lower()
-    sink_file = str(sink.get("file") or "").lower()
-    ep = str((chain[0].split(":")[-1] if chain else "") or src.get("function") or src.get("func") or "").lower()
-    var = str(src.get("variable") or "").lower()
-
-    pts = 2
-
-    try:
-        conf = float(flow.get("confidence") or 0)
-    except (ValueError, TypeError):
-        conf = 0.0
-    fid = str(flow.get("id") or "").lower()
-    if conf >= 0.7 or fid.startswith(("tf", "ct")) or flow.get("verdict") == "VULNERABLE":
-        pts += 10
-
-    rce_ops = (
-        "system", "exec", "popen", "eval", "spawn", "passthru",
-        "subprocess", "shell_exec", "check_output", "render_template",
-        "compile", "command", "process", "processbuilder", "runtime",
-        "child_process", "execsync", "spawnsync", "fork", "runincontext",
-        "proc_open", "pcntl_exec", "assert", "create_function", "open3",
-        "execl", "execv", "execle", "execve", "execvp"
-    )
-
-    memory_ops = (
-        "strcpy", "strncpy", "strcat", "strncat", "sprintf", "vsprintf",
-        "snprintf", "vsnprintf", "gets", "memcpy", "memmove", "free",
-        "malloc", "calloc", "realloc", "alloca", "valloc", "reallocarray",
-        "memset", "bcopy", "unsafe", "transmute", "from_raw_parts",
-        "scanf", "sscanf", "fscanf", "asprintf", "dprintf",
-        "talloc_free", "talloc_const_free", "fr_radius_packet_free",
-        "freeaddrinfo", "lt_const_free", "lt_malloc"
-    )
-
-    is_c_cpp = any(sink_file.endswith(ext) for ext in (".c", ".cpp", ".cc", ".cxx", ".h", ".hpp"))
-    fmt_ops = ("printf", "fprintf", "vprintf", "vfprintf", "syslog", "asprintf", "dprintf", "snprintf", "sprintf")
-
-    if _match_op(op, rce_ops):
-        pts += 10
-    elif is_c_cpp and _match_op(op, fmt_ops):
-        pts += 8
-    elif _match_op(op, memory_ops):
-        pts += 8
-
-    serial_ops = (
-        "pickle", "yaml", "shelve", "marshal", "unserialize",
-        "readobject", "readunshared", "binaryformatter", "xmldecoder",
-        "kryo", "hessian", "fastjson", "objectinputstream", "node-serialize"
-    )
-    if _match_op(op, serial_ops):
-        pts += 7
-
-    leak_ops = (
-        "open", "fopen", "read", "send_file", "readfile", "writefile",
-        "remove", "unlink", "shutil", "file", "fileinputstream",
-        "fileoutputstream", "filereader", "filewriter", "paths.get",
-        "file_get_contents", "file_put_contents", "include", "require"
-    )
-    if _match_op(op, leak_ops):
-        pts += 6
-
-    web_ops = (
-        "query", "select", "sql", "cursor", "execute",
-        "requests", "urlopen", "fetch", "render", "template",
-        "sqlite3", "mysql", "pqexec", "preparestatement", "executequery",
-        "initialcontext", "lookup", "axios", "curl_exec", "findone"
-    )
-    if _match_op(op, web_ops):
-        pts += 5
-
-    src_keys = (
-        "argv", "param", "query", "request", "body", "stdin",
-        "recv", "header", "cookie", "input", "args", "form",
-        "upload", "file", "url", "socket", "req"
-    )
-    if any(k in ep for k in src_keys) or any(k in var for k in src_keys):
-        pts += 3
-
-    modules = (
-        "auth", "security", "oauth", "session", "permission", "credential",
-        "identity", "policy", "access", "guard", "login", "proxy", "token",
-        "crypto", "vault", "privilege", "role", "cert", "secret"
-    )
-    if any(m in sink_file for m in modules):
-        pts += 4
-
-    logic = (
-        "verify", "validate", "check", "authenticate", "authorize", "permit",
-        "grant", "allow", "deny", "issue", "sign", "derive", "generate",
-        "create", "encode", "decode", "redirect", "callback", "bind",
-        "isallowed", "isauthenticated", "isadmin", "haspermission", "can"
-    )
-    if _match_op(op, logic) or _match_op(ep, logic):
-        pts += 4
-
-    params = (
-        "client", "user", "role", "token", "jwt", "param", "cred", "secret",
-        "key", "state", "scope", "audience", "redirect", "session", "pass",
-        "signature", "claim", "tenant", "principal"
-    )
-    if any(k in ep for k in params) or any(k in var for k in params) or any(k in op for k in params):
-        pts += 3
-
-    inits = (
-        "__init__", "__new__", "constructor", "initialize", "new", "<init>",
-        "getinstance", "build", "setup", "configure"
-    )
-    if any(m in sink_file for m in modules) and any(v in op or v in ep for v in inits):
-        pts += 4
-
-    chain_len = len(chain)
-    if 0 < chain_len <= 4:
-        pts += 2
-    elif 5 <= chain_len <= 9:
-        pts += 1
-    elif chain_len >= 10:
-        pts -= 1
-
-    return pts
-
-
 def dedup(flows):
     clusters = {}
     for f in flows:
         sink = f.get("sink", {}) or {}
         key = f"{sink.get('file')}:{sink.get('func')}:{sink.get('line')}"
-        cur_pts = score(f)
-        if key not in clusters or cur_pts > clusters[key][0]:
-            clusters[key] = (cur_pts, f)
-    return [item[1] for item in clusters.values()]
-
-
-def rank_flows(flows):
-    return sorted(flows, key=lambda f: score(f), reverse=True)
+        if key not in clusters:
+            clusters[key] = f
+    return list(clusters.values())
 
 
 def _parse_line(val):
@@ -190,10 +46,8 @@ def combine(flows):
         var_val = str(sink.get("variable") or "").strip()
 
         key = (file_val, line_val, func_val)
-        cur_score = score(f)
         vector = {
             "id": f.get("id", ""),
-            "score": cur_score,
             "source": f.get("source", {}) or {},
             "chain": f.get("chain", []) or []
         }
@@ -220,9 +74,6 @@ def combine(flows):
         clusters[key]["vectors"].append(vector)
 
     cluster_list = list(clusters.values())
-    for item in cluster_list:
-        item["vectors"].sort(key=lambda v: v.get("score", 0), reverse=True)
-    cluster_list.sort(key=lambda item: item["vectors"][0].get("score", 0) if item["vectors"] else 0, reverse=True)
 
     combined = []
     for idx, item in enumerate(cluster_list, 1):
@@ -369,8 +220,8 @@ def filter(flows):
     return cleaned
 
 
-def rank_files(flows_path, done_files=None):
-    """Group filtered call-flows by file and return pending files ranked by risk."""
+def pending_files(flows_path, done_files=None):
+    """Group filtered call-flows by file and return pending files."""
     import json
     from pathlib import Path
     from utils.skip import is_non_prod
@@ -380,7 +231,7 @@ def rank_files(flows_path, done_files=None):
         return []
 
     done_norm = {str(f).replace("\\", "/").strip().lstrip("/") for f in (done_files or [])}
-    grouped = {}
+    counts = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line:
@@ -392,26 +243,20 @@ def rank_files(flows_path, done_files=None):
         dst_f = str(obj.get("dst", {}).get("file") or "").replace("\\", "/").strip().lstrip("/")
         if not dst_f or is_non_prod(dst_f) or dst_f in done_norm:
             continue
-        grouped.setdefault(dst_f, []).append(score(obj))
+        counts[dst_f] = counts.get(dst_f, 0) + 1
 
-    ranked = []
-    for fpath, scores in grouped.items():
-        ranked.append({
-            "file": fpath,
-            "flow_count": len(scores),
-            "max_score": max(scores) if scores else 0,
-            "total_score": sum(scores),
-        })
-
-    ranked.sort(
+    pending = [
+        {"file": fpath, "flow_count": cnt}
+        for fpath, cnt in counts.items()
+    ]
+    pending.sort(
         key=lambda item: (
             0 if item["file"].startswith("src/") else 1,
-            -item["max_score"],
-            -item["total_score"],
+            -item["flow_count"],
             item["file"],
         )
     )
-    return ranked
+    return pending
 
 
-__all__ = ["score", "dedup", "rank_flows", "rank_files", "combine", "filter"]
+__all__ = ["dedup", "pending_files", "combine", "filter"]

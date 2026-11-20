@@ -27,7 +27,9 @@ agent:
     Verify whether PoV execution confirms the vulnerability at the designated sink:
     - CONFIRMED: Execution evidence proves vulnerability trigger and matches the hypothesis.
     - UNCONFIRMED: Execution fails to trigger vulnerability or target defense blocks exploit.
-    - RETRY: Execution fails due to script or environment defects, retry attempts remain.
+    - RETRY: 
+      - if execution fails due to script or environment.
+      - if `{{pov_script}}` copies target code, mocks security checks, or lacks a control case.
 
     ## Workflow - REFERENCE
     1. Read `{{hypothesis}}`, `{{pov_script}}`, and `{{pov_result}}`.

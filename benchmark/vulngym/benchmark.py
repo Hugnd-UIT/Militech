@@ -12,7 +12,7 @@ if str(root) not in sys.path:
 
 import graphify
 from agents import RepoRetrieverAgent
-from src.dedup import filter as dedup
+from utils.dedup import filter as dedup
 from utils.log import setup_logger
 
 log = setup_logger()
@@ -158,7 +158,7 @@ def retrieve(repo, graphs, flows, taints, box=None, entries=None, commit=None):
     def on_target(high, target_file, idx, total):
         scanned.add(norm(target_file))
         if tgt:
-            from src.dedup import combine
+            from utils.dedup import combine
             cur = combine(high)
             res = evaluate(cur, tgt, commit)
             hits = res.get("hits", 0)

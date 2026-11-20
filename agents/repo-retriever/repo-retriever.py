@@ -171,8 +171,8 @@ class RepoRetrieverAgent(BaseAgent):
                     collected.append(norm)
 
         # Deduplicate per sink inside chunk and assign global flow_xxx IDs
-        from utils.dedup import dedup, rank_flows
-        unique_flows = rank_flows(dedup(collected))
+        from utils.dedup import dedup
+        unique_flows = dedup(collected)
         final_flows = []
         for offset, flow in enumerate(unique_flows):
             flow["id"] = f"flow_{start_flow_idx + offset:03d}"

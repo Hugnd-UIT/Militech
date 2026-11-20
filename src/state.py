@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from models import tracker
-from utils.dedup import rank_files
+from utils.dedup import pending_files as _pending_files
 
 REPORT_SECTIONS = (
     "### Summary",
@@ -155,7 +155,7 @@ class State:
 
     def pending_files(self) -> list[dict]:
         done = [c["target_file"] for c in self.get_chunks() if c["target_file"]]
-        return rank_files(self.call_flows_path(), done_files=done)
+        return _pending_files(self.call_flows_path(), done_files=done)
 
     def create_chunk(self, target_file: str) -> dict | None:
         flows_file = self.call_flows_path()

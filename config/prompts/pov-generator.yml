@@ -30,8 +30,8 @@ agent:
 
     ## Goal
     Construct a PoV script to exploit the vulnerability and inspect execution results:
-    - SUCCESS: Script executes cleanly and satisfies the hypothesis oracle.
-    - ERROR: Script execution fails due to environment defect or target defense.
+    - SUCCESS: Script executes cleanly and satisfies the hypothesis.
+    - ERROR: Script execution fails due to environment or wrong hypothesis.
 
     ## Workflow - REFERENCE
     1. Read {{hypothesis}} and {{harness}} if available.
@@ -41,6 +41,9 @@ agent:
     ## Scope - STRICT
     - Craft self-contained PoV scripts strictly based on `{{hypothesis}}`.
     - NEVER modify target source code; interact only via external inputs.
+    - Execute real `{{repo}}` code via public entry points; NEVER copy or reimplement target functions inside `{{pov_script}}`.
+    - Run both a benign control case and an vulnerability attack case through the same entry point.
+    - Prove real vulnerability like crash, data leak, auth bypass, ... , not printed claims.
 
     ## Schema
 
